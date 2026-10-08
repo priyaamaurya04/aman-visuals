@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  --font-hero: 'Bebas Neue', sans-serif;
+  --font-heading: 'Space Grotesk', sans-serif;
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    letter-spacing: normal;
+    background-color: #070709;
+    color: #f4f4f5;
+  }
+
+  /* Hero / Display Font: Bebas Neue */
+  .font-hero {
+    font-family: var(--font-hero);
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+  }
+
+  /* Primary Heading Font: Space Grotesk (600-700, slightly tight letter spacing) */
+  h1, h2, h3, h4, .font-heading {
+    font-family: var(--font-heading);
+    letter-spacing: -0.03em;
+  }
+
+  /* Body Font: Inter (clean, readable, normal spacing) */
+  p, span, a, button, input, textarea, select, .font-sans {
+    font-family: var(--font-sans);
+  }
+
+  /* Technical / Editing UI Font: JetBrains Mono */
+  .font-mono, .font-tech, code, time {
+    font-family: var(--font-mono);
+    letter-spacing: 0.05em;
+  }
+}
+
+/* Custom Film Grain */
+.film-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+/* Film Sprockets */
+.sprocket-pattern {
+  background-image: radial-gradient(#18181b 40%, transparent 42%);
+  background-size: 20px 20px;
+}
+
+/* Smooth custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #d97706;
+}

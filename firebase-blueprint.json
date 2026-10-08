@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "PortfolioItem": {
+      "title": "PortfolioItem",
+      "description": "Video link and metadata for showreel and featured portfolio project cuts",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the project slot or showreel",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 64
+        },
+        "itemType": {
+          "type": "string",
+          "description": "Type of media item: showreel or project",
+          "enum": ["showreel", "project"]
+        },
+        "title": {
+          "type": "string",
+          "description": "Editorial piece title",
+          "maxLength": 120
+        },
+        "videoUrl": {
+          "type": "string",
+          "description": "Direct video URL, Vimeo link, YouTube link, or embed stream URL",
+          "maxLength": 2048
+        },
+        "thumbnailUrl": {
+          "type": "string",
+          "description": "Custom thumbnail image URL",
+          "maxLength": 2048
+        },
+        "client": {
+          "type": "string",
+          "description": "Client or brand name",
+          "maxLength": 100
+        },
+        "role": {
+          "type": "string",
+          "description": "Editorial role performed",
+          "maxLength": 100
+        },
+        "aspectRatio": {
+          "type": "string",
+          "description": "Video canvas aspect ratio",
+          "maxLength": 50
+        },
+        "tagline": {
+          "type": "string",
+          "description": "Project summary or tagline",
+          "maxLength": 500
+        },
+        "category": {
+          "type": "string",
+          "description": "Project category",
+          "maxLength": 50
+        },
+        "year": {
+          "type": "string",
+          "description": "Release year",
+          "maxLength": 20
+        },
+        "duration": {
+          "type": "string",
+          "description": "Video runtime duration",
+          "maxLength": 20
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "User ID of the editor who updated the link",
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last edit"
+        }
+      },
+      "required": ["id", "itemType", "title", "videoUrl", "updatedBy"]
+    },
+    "SiteSetting": {
+      "title": "SiteSetting",
+      "description": "Section texts, photos, and configurations for hero, about, contact, and workflow",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Section key e.g. hero, about, contact, global",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 64
+        },
+        "headline": {
+          "type": "string",
+          "description": "Primary section headline",
+          "maxLength": 300
+        },
+        "subheadline": {
+          "type": "string",
+          "description": "Secondary subheadline or quote",
+          "maxLength": 500
+        },
+        "bodyText": {
+          "type": "string",
+          "description": "Extended biography or section body text",
+          "maxLength": 10000
+        },
+        "mediaUrl": {
+          "type": "string",
+          "description": "Photo or video media URL",
+          "maxLength": 2048
+        },
+        "secondaryMediaUrl": {
+          "type": "string",
+          "description": "Secondary photo or video media URL",
+          "maxLength": 2048
+        },
+        "metaOne": {
+          "type": "string",
+          "description": "Metadata string 1 e.g. location or email",
+          "maxLength": 500
+        },
+        "metaTwo": {
+          "type": "string",
+          "description": "Metadata string 2 e.g. phone or status",
+          "maxLength": 500
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "User ID of the editor",
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last edit"
+        }
+      },
+      "required": ["id", "updatedBy"]
+    }
+  },
+  "firestore": {
+    "/portfolio_items/{itemId}": {
+      "schema": "PortfolioItem",
+      "description": "Publicly readable portfolio video links and media entries managed by authenticated editor"
+    },
+    "/site_settings/{settingId}": {
+      "schema": "SiteSetting",
+      "description": "Section settings for website texts, photos, and branding"
+    }
+  }
+}

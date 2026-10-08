@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny all unmatched paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function isValidPortfolioItem(data, docId) {
+      return data.keys().hasAll(['id', 'itemType', 'title', 'videoUrl', 'updatedBy']) &&
+        data.keys().hasOnly(['id', 'itemType', 'title', 'videoUrl', 'thumbnailUrl', 'client', 'role', 'aspectRatio', 'tagline', 'category', 'year', 'duration', 'updatedBy', 'updatedAt']) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        data.itemType in ['showreel', 'project'] &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.videoUrl is string && data.videoUrl.size() >= 3 && data.videoUrl.size() <= 2048 &&
+        data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+        (!('thumbnailUrl' in data) || (data.thumbnailUrl is string && data.thumbnailUrl.size() <= 2048)) &&
+        (!('client' in data) || (data.client is string && data.client.size() <= 100)) &&
+        (!('role' in data) || (data.role is string && data.role.size() <= 100)) &&
+        (!('aspectRatio' in data) || (data.aspectRatio is string && data.aspectRatio.size() <= 50)) &&
+        (!('tagline' in data) || (data.tagline is string && data.tagline.size() <= 500)) &&
+        (!('category' in data) || (data.category is string && data.category.size() <= 50)) &&
+        (!('year' in data) || (data.year is string && data.year.size() <= 20)) &&
+        (!('duration' in data) || (data.duration is string && data.duration.size() <= 20)) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidSiteSetting(data, docId) {
+      return data.keys().hasAll(['id', 'updatedBy']) &&
+        data.keys().hasOnly(['id', 'headline', 'subheadline', 'bodyText', 'mediaUrl', 'secondaryMediaUrl', 'metaOne', 'metaTwo', 'updatedBy', 'updatedAt']) &&
+        data.id == docId &&
+        isValidId(data.id) &&
+        data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+        (!('headline' in data) || (data.headline is string && data.headline.size() <= 300)) &&
+        (!('subheadline' in data) || (data.subheadline is string && data.subheadline.size() <= 500)) &&
+        (!('bodyText' in data) || (data.bodyText is string && data.bodyText.size() <= 10000)) &&
+        (!('mediaUrl' in data) || (data.mediaUrl is string && data.mediaUrl.size() <= 2048)) &&
+        (!('secondaryMediaUrl' in data) || (data.secondaryMediaUrl is string && data.secondaryMediaUrl.size() <= 2048)) &&
+        (!('metaOne' in data) || (data.metaOne is string && data.metaOne.size() <= 500)) &&
+        (!('metaTwo' in data) || (data.metaTwo is string && data.metaTwo.size() <= 500)) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    // Portfolio items collection: public showreel & project cuts
+    match /portfolio_items/{itemId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && isValidId(itemId) && isValidPortfolioItem(incoming(), itemId) && incoming().updatedBy == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(itemId) && isValidPortfolioItem(incoming(), itemId) && incoming().updatedBy == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(itemId);
+    }
+
+    // Site settings collection: section texts, photos, and configurations
+    match /site_settings/{settingId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && isValidId(settingId) && isValidSiteSetting(incoming(), settingId) && incoming().updatedBy == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(settingId) && isValidSiteSetting(incoming(), settingId) && incoming().updatedBy == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(settingId);
+    }
+  }
+}
