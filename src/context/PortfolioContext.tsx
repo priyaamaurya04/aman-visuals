@@ -26,6 +26,7 @@ import {
   PROCESS_STEPS as DEFAULT_PROCESS,
 } from '../data/portfolioData';
 import { Project, ReelItem, TimelineStage, SkillItem, SoftwareTool, ProcessStep } from '../types';
+import localVideoFiles from 'virtual:local-videos';
 import { rehydrateReelsWithStoredVideos, removeStoredVideo } from '../utils/videoStorage';
 import { uploadReelVideoToFirebase, fetchReelVideoFromFirebase } from '../utils/firebaseVideoSync';
 
@@ -794,46 +795,16 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
     })
     .filter((proj) => !isDummyProject(proj));
 
-  // Merged vertical reels: strictly real 9:16 reels (including customItems reels with valid links)
-  const baseReels: ReelItem[] = reelsList
-    .filter((r) => !isDummyReel(r))
-    .map((r) => {
-      const override = customItems[r.id];
-      const cleanPoster = isDummyImageUrl(r.posterUrl) ? undefined : r.posterUrl;
-      if (!override) return { ...r, posterUrl: cleanPoster };
-      return {
-        ...r,
-        posterUrl: cleanPoster,
-        title: override.title || r.title,
-        videoUrl: override.videoUrl || r.videoUrl,
-        client: override.client || r.client,
-        aspect: override.aspectRatio || r.aspect,
-        isBase64: override.isBase64 ?? r.isBase64,
-      };
-    });
-
-  const existingReelIds = new Set(baseReels.map((r) => r.id));
-  const extraCustomReels: ReelItem[] = Object.values(customItems)
-    .filter(
-      (item) =>
-        item &&
-        item.itemType === 'reel' &&
-        !existingReelIds.has(item.id) &&
-        Boolean(item.videoUrl) &&
-        !isDummyVideoUrl(item.videoUrl) &&
-        !item.videoUrl.startsWith('blob:')
-    )
-    .map((item, idx) => ({
-      id: item.id,
-      number: String(baseReels.length + idx + 1).padStart(2, '0'),
-      title: item.title || `REEL ${baseReels.length + idx + 1}`,
-      videoUrl: item.videoUrl,
-      aspect: item.aspectRatio || '9:16',
-      client: item.client || 'Social / Vertical Client',
-      isBase64: item.isBase64,
-    }));
-
-  const effectiveReels: ReelItem[] = [...baseReels, ...extraCustomReels];
+  // Vertical reels: one per video file in public/videos (see localVideosPlugin in vite.config.ts).
+  const effectiveReels: ReelItem[] = localVideoFiles.map((file, idx) => ({
+    id: `local-${file}`,
+    number: String(idx + 1).padStart(2, '0'),
+    title: file.replace(/\.[^.]+$/, '').toUpperCase(),
+    videoUrl: `/videos/${encodeURIComponent(file)}`,
+    aspect: '9:16',
+    client: 'Social / Vertical Client',
+    fileName: file,
+  }));
 
   // Updaters with direct RTDB sync
   const updateHeroContent = (patch: Partial<HeroContent>) => {
@@ -882,26 +853,38 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
       return updated;
     });
 
-    if (patch.videoUrl || patch.posterUrl || patch.title || patch.client || patch.aspect) {
+    // Keep the override layer in sync, including when a field is cleared to '' —
+    // otherwise a stale override value would be merged back over the edited project.
+    const overridePatch: Partial<FirestorePortfolioItem> = {};
+    if (patch.title !== undefined) overridePatch.title = patch.title;
+    if (patch.videoUrl !== undefined) overridePatch.videoUrl = patch.videoUrl;
+    if (patch.posterUrl !== undefined) overridePatch.thumbnailUrl = patch.posterUrl;
+    if (patch.client !== undefined) overridePatch.client = patch.client;
+    if (patch.role !== undefined) overridePatch.role = patch.role;
+    if (patch.aspect !== undefined) overridePatch.aspectRatio = patch.aspect;
+    if (patch.tagline !== undefined) overridePatch.tagline = patch.tagline;
+    if (patch.category !== undefined) overridePatch.category = patch.category;
+    if (patch.year !== undefined) overridePatch.year = patch.year;
+    if (patch.duration !== undefined) overridePatch.duration = patch.duration;
+
+    if (Object.keys(overridePatch).length > 0) {
       setCustomItems((prev) => {
+        const hadOverride = Boolean(prev[id]);
         const existing = prev[id] || {
           id,
           itemType: 'project',
-          title: patch.title || '',
-          videoUrl: patch.videoUrl || '',
+          title: patch.title ?? '',
+          videoUrl: patch.videoUrl ?? '',
           updatedBy: auth.currentUser?.uid || 'guest-editor-local',
         };
-        const nextItem: FirestorePortfolioItem = {
-          ...existing,
-          title: patch.title ?? existing.title,
-          videoUrl: patch.videoUrl ?? existing.videoUrl,
-          thumbnailUrl: patch.posterUrl ?? existing.thumbnailUrl,
-          client: patch.client ?? existing.client,
-          role: patch.role ?? existing.role,
-          aspectRatio: patch.aspect ?? existing.aspectRatio,
-        };
+        const nextItem: FirestorePortfolioItem = { ...existing, ...overridePatch };
         const next = { ...prev, [id]: nextItem };
         persistItemsLocally(next);
+        // A cloud override may exist for this project; update it too so the next
+        // realtime snapshot doesn't restore the old value.
+        if (hadOverride) {
+          update(ref(rtdb, `portfolio/customItems/${id}`), cleanForFirebase(overridePatch)).catch(() => {});
+        }
         return next;
       });
     }

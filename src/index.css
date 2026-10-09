@@ -51,6 +51,14 @@
   background-size: 20px 20px;
 }
 
+/* Background videos autoplay muted — never show the browser's native play overlay */
+video::-webkit-media-controls,
+video::-webkit-media-controls-overlay-play-button,
+video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none;
+}
+
 /* Smooth custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

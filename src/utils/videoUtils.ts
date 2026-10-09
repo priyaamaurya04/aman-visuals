@@ -5,6 +5,8 @@
  * and Google Drive links.
  */
 
+import videoManifest from '../generated/videoManifest.json';
+
 export interface ParsedVideo {
   type: 'embed' | 'direct';
   embedUrl?: string;
@@ -243,6 +245,9 @@ export function parseVideoUrl(url: string | undefined): ParsedVideo {
   if (gdriveMatch && gdriveMatch[1]) {
     const fileId = gdriveMatch[1];
     const previewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+    // Prefer the copy synced into /public/videos (see scripts/sync-drive-videos.mjs);
+    // fall back to streaming from Drive through the proxy until it has been synced.
+    const localUrl = (videoManifest as Record<string, string>)[fileId];
     const proxyStreamUrl = `/api/video-proxy?id=${fileId}`;
     return {
       type: 'direct',
@@ -250,7 +255,7 @@ export function parseVideoUrl(url: string | undefined): ParsedVideo {
       embedUrl: previewUrl,
       backgroundUrl: previewUrl,
       externalUrl: `https://drive.google.com/file/d/${fileId}/view?usp=sharing`,
-      directUrl: proxyStreamUrl,
+      directUrl: localUrl || proxyStreamUrl,
       source: 'gdrive',
     };
   }

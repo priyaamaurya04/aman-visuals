@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig, Plugin } from 'vite';
@@ -84,9 +85,47 @@ function videoProxyPlugin(): Plugin {
   };
 }
 
+// Every video file in public/videos becomes a carousel reel. Exposed as `virtual:local-videos`
+// (a sorted list of file names); in dev, adding or removing a file reloads the page.
+const LOCAL_VIDEO_DIR = path.resolve(__dirname, 'public', 'videos');
+const LOCAL_VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
+
+function localVideosPlugin(): Plugin {
+  const virtualId = 'virtual:local-videos';
+  const resolvedId = '\0' + virtualId;
+  const listVideos = () =>
+    fs.existsSync(LOCAL_VIDEO_DIR)
+      ? fs
+          .readdirSync(LOCAL_VIDEO_DIR)
+          .filter((f) => LOCAL_VIDEO_EXT.test(f))
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+      : [];
+
+  return {
+    name: 'local-videos-plugin',
+    resolveId(id) {
+      if (id === virtualId) return resolvedId;
+    },
+    load(id) {
+      if (id === resolvedId) return `export default ${JSON.stringify(listVideos())};`;
+    },
+    configureServer(server) {
+      server.watcher.add(LOCAL_VIDEO_DIR);
+      const onChange = (file: string) => {
+        if (path.dirname(path.resolve(file)) !== LOCAL_VIDEO_DIR || !LOCAL_VIDEO_EXT.test(file)) return;
+        const mod = server.moduleGraph.getModuleById(resolvedId);
+        if (mod) server.moduleGraph.invalidateModule(mod);
+        server.ws.send({ type: 'full-reload' });
+      };
+      server.watcher.on('add', onChange);
+      server.watcher.on('unlink', onChange);
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), videoProxyPlugin()],
+    plugins: [react(), tailwindcss(), videoProxyPlugin(), localVideosPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

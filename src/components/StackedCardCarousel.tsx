@@ -13,7 +13,7 @@ import {
 import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { ReelItem } from '../types';
-import { parseVideoUrl, base64ToBlobUrl, isBase64Video } from '../utils/videoUtils';
+import { parseVideoUrl, base64ToBlobUrl, isBase64Video, getAutoThumbnail } from '../utils/videoUtils';
 
 export const StackedCardCarousel: React.FC = () => {
   const { reels } = usePortfolio();
@@ -24,7 +24,9 @@ export const StackedCardCarousel: React.FC = () => {
   const [cinemaReel, setCinemaReel] = useState<ReelItem | null>(null);
   const [isCinemaMuted, setIsCinemaMuted] = useState<boolean>(true);
   const [isCinemaPlaying, setIsCinemaPlaying] = useState<boolean>(true);
-  const [useEmbedMap, setUseEmbedMap] = useState<Record<string, boolean>>({});
+  // Per-reel retry counter: on a stream error we reload the muted video instead of falling back
+  // to the Google Drive preview iframe (which can't autoplay and shows its own play button).
+  const [retryMap, setRetryMap] = useState<Record<string, number>>({});
 
   // Responsive card spacing for smooth 3D coverflow
   const [cardSpacing, setCardSpacing] = useState<number>(230);
@@ -87,30 +89,13 @@ export const StackedCardCarousel: React.FC = () => {
     }
   }, [reels]);
 
-  // High-performance video preloader: Pre-cache all video streams into memory for instant loading
-  useEffect(() => {
-    if (!reels || reels.length === 0) return;
+  // Note: no separate detached preloader videos — they doubled every stream and exhausted the
+  // browser's per-host connection limit, leaving the visible cards stuck on a black frame.
+  // Instead every card stays mounted (see render below) so each video loads once and keeps looping.
 
-    reels.forEach((r) => {
-      try {
-        const parsed = parseVideoUrl(r.videoUrl);
-        const isBase64 = isBase64Video(r.videoUrl) || r.isBase64;
-        const src = isBase64 ? base64ToBlobUrl(r.videoUrl) : (parsed.directUrl || r.videoUrl);
-
-        if (src && (src.startsWith('http') || src.startsWith('blob') || src.startsWith('/'))) {
-          const preloader = document.createElement('video');
-          preloader.preload = 'auto';
-          preloader.muted = true;
-          preloader.playsInline = true;
-          preloader.crossOrigin = 'anonymous';
-          preloader.src = src;
-          preloader.load();
-        }
-      } catch {
-        // Safe fallback
-      }
-    });
-  }, [reels]);
+  // Tracks which cards were hidden on the previous render so cards re-entering the
+  // visible window jump into place instead of sliding across the stage.
+  const wasHiddenRef = useRef<Record<string, boolean>>({});
 
   const safeActiveIndex = totalSlides > 0 ? ((activeIndex % totalSlides) + totalSlides) % totalSlides : 0;
 
@@ -214,6 +199,18 @@ export const StackedCardCarousel: React.FC = () => {
     };
   }, []);
 
+  // Remember each card's hidden state after render (read on the next render for instant re-entry)
+  useEffect(() => {
+    const next: Record<string, boolean> = {};
+    slides.forEach((slide, index) => {
+      let diff = index - safeActiveIndex;
+      while (diff > totalSlides / 2) diff -= totalSlides;
+      while (diff < -totalSlides / 2) diff += totalSlides;
+      next[slide.id] = Math.abs(diff) > 2.5;
+    });
+    wasHiddenRef.current = next;
+  });
+
   // Drag Gesture Handling for touch and desktop mouse drag
   const handleDragEnd = (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     setIsDragging(false);
@@ -279,8 +276,11 @@ export const StackedCardCarousel: React.FC = () => {
           const isCenter = diff === 0;
           const absDiff = Math.abs(diff);
 
-          // Performance & wrap smoothing: only render visible window to eliminate teleporting artifacts
-          if (absDiff > 2.5) return null;
+          // Cards outside the visible window stay mounted (so their video keeps playing)
+          // but are hidden; moves into/out of hidden state are instant to avoid teleport artifacts.
+          const isHidden = absDiff > 2.5;
+          const wasHidden = wasHiddenRef.current[slide.id] ?? isHidden;
+          const instant = isHidden || wasHidden;
 
           // 3D Coverflow Physics
           const translateX = diff * cardSpacing;
@@ -304,20 +304,22 @@ export const StackedCardCarousel: React.FC = () => {
                 x: translateX,
                 scale,
                 rotateY,
-                opacity,
-                zIndex,
+                opacity: isHidden ? 0 : opacity,
+                zIndex: isHidden ? 0 : zIndex,
               }}
               transition={{
-                x: { duration: 0.4, ease: [0.16, 1, 0.3, 1] },
-                scale: { duration: 0.4, ease: [0.16, 1, 0.3, 1] },
-                rotateY: { duration: 0.4, ease: [0.16, 1, 0.3, 1] },
-                opacity: { duration: 0.28, ease: 'easeInOut' },
+                x: { duration: instant ? 0 : 0.4, ease: [0.16, 1, 0.3, 1] },
+                scale: { duration: instant ? 0 : 0.4, ease: [0.16, 1, 0.3, 1] },
+                rotateY: { duration: instant ? 0 : 0.4, ease: [0.16, 1, 0.3, 1] },
+                opacity: { duration: isHidden ? 0 : 0.28, ease: 'easeInOut' },
                 zIndex: { duration: 0.08 },
               }}
               style={{
                 transformStyle: 'preserve-3d',
                 transformOrigin: 'center center',
+                pointerEvents: isHidden ? 'none' : undefined,
               }}
+              aria-hidden={isHidden || undefined}
               onClick={() => {
                 if (!isCenter && !isDragging) {
                   setActiveIndex(index);
@@ -411,7 +413,7 @@ export const StackedCardCarousel: React.FC = () => {
                     }
 
                     // Embed player (YouTube/Instagram or Google Drive fallback)
-                    if (((parsed.type === 'embed' && parsed.embedUrl && parsed.source !== 'gdrive') || useEmbedMap[reel.id]) && parsed.embedUrl) {
+                    if (parsed.type === 'embed' && parsed.embedUrl && parsed.source !== 'gdrive') {
                       return (
                         <div className="absolute inset-0 w-full h-full overflow-hidden bg-black flex items-center justify-center pointer-events-auto">
                           <iframe
@@ -428,7 +430,12 @@ export const StackedCardCarousel: React.FC = () => {
 
                     // Pure video playback directly through video link / local vault / base64 video upload
                     const isBase64 = isBase64Video(reel.videoUrl) || reel.isBase64;
-                    const videoSrc = isBase64 ? base64ToBlobUrl(reel.videoUrl) : (parsed.directUrl || reel.videoUrl);
+                    const baseSrc = isBase64 ? base64ToBlobUrl(reel.videoUrl) : (parsed.directUrl || reel.videoUrl);
+                    const retry = retryMap[reel.id] || 0;
+                    const videoSrc =
+                      retry > 0 && baseSrc && !baseSrc.startsWith('blob:') && !baseSrc.startsWith('data:')
+                        ? `${baseSrc}${baseSrc.includes('?') ? '&' : '?'}retry=${retry}`
+                        : baseSrc;
 
                     if (!videoSrc) return null;
 
@@ -446,7 +453,7 @@ export const StackedCardCarousel: React.FC = () => {
                           }
                         }}
                         src={videoSrc || undefined}
-                        poster={reel.posterUrl || undefined}
+                        poster={reel.posterUrl || getAutoThumbnail(reel.videoUrl) || undefined}
                         autoPlay
                         muted
                         loop
@@ -459,8 +466,11 @@ export const StackedCardCarousel: React.FC = () => {
                           }
                         }}
                         onError={() => {
-                          if (parsed.source === 'gdrive' && !useEmbedMap[reel.id]) {
-                            setUseEmbedMap((prev) => ({ ...prev, [reel.id]: true }));
+                          const attempts = retryMap[reel.id] || 0;
+                          if (attempts < 5) {
+                            window.setTimeout(() => {
+                              setRetryMap((prev) => ({ ...prev, [reel.id]: attempts + 1 }));
+                            }, 1500 * (attempts + 1));
                           }
                         }}
                         className="w-full h-full object-cover transition-transform duration-700 brightness-[0.98] pointer-events-auto"
@@ -561,7 +571,7 @@ export const StackedCardCarousel: React.FC = () => {
                     <video
                       ref={cinemaVideoRef}
                       src={cinemaSrc || undefined}
-                      poster={cinemaReel.posterUrl || undefined}
+                      poster={cinemaReel.posterUrl || getAutoThumbnail(cinemaReel.videoUrl) || undefined}
                       autoPlay
                       loop
                       playsInline

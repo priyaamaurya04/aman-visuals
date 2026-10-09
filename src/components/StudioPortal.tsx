@@ -108,20 +108,6 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
   // Video Link Quick Test tool
   const [testVideoUrl, setTestVideoUrl] = useState('');
 
-  // Carousel Reel Upload States (Supports Direct File Ingestion via IndexedDB + Cloud Video Links)
-  const [portalReelSource, setPortalReelSource] = useState<'url' | 'file'>('file');
-  const [portalReelUrl, setPortalReelUrl] = useState('');
-  const [portalReelFileName, setPortalReelFileName] = useState('');
-  const [portalReelFileSize, setPortalReelFileSize] = useState('');
-  const [portalReelPreview, setPortalReelPreview] = useState('');
-  const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
-  const [isUploadingReel, setIsUploadingReel] = useState(false);
-  const portalReelFileRef = React.useRef<HTMLInputElement>(null);
-
-  // File input for replacing existing reel's video
-  const replaceReelFileRef = React.useRef<HTMLInputElement>(null);
-  const [replacingReelId, setReplacingReelId] = useState<string | null>(null);
-
   // Portrait Photo Base64 File Uploader states
   const portraitImageFileRef = React.useRef<HTMLInputElement>(null);
   const [isConvertingPortraitBase64, setIsConvertingPortraitBase64] = useState(false);
@@ -147,145 +133,6 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
     } finally {
       setIsConvertingPortraitBase64(false);
       if (portraitImageFileRef.current) portraitImageFileRef.current.value = '';
-    }
-  };
-
-  const handlePortalReelFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Check mime-type or file extension to support all mobile & desktop formats
-    const isVideo =
-      (file.type && file.type.startsWith('video/')) ||
-      /\.(mp4|mov|webm|m4v|mkv|avi|quicktime)$/i.test(file.name);
-
-    if (!isVideo) {
-      showNotification('Please select a valid video file (MP4, MOV, WebM, M4V, MKV).', 'error');
-      if (portalReelFileRef.current) portalReelFileRef.current.value = '';
-      return;
-    }
-
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
-    setPortalReelFileName(file.name);
-    setPortalReelFileSize(`${sizeMb} MB`);
-    setSelectedVideoFile(file);
-
-    // Instant zero-cost Blob URL for immediate preview playback
-    const previewBlob = URL.createObjectURL(file);
-    setPortalReelPreview(previewBlob);
-    showNotification(`Video loaded: ${file.name} (${sizeMb} MB) ready to add!`, 'success');
-  };
-
-  const handleAddPortalReel = async () => {
-    if (!selectedVideoFile && !portalReelUrl.trim() && !portalReelPreview) {
-      showNotification('Please select a video file or enter a video URL.', 'error');
-      return;
-    }
-    setIsUploadingReel(true);
-    try {
-      const newId = `reel-${Date.now()}`;
-      const reelNum = String(reels.length + 1).padStart(2, '0');
-      const titleName = portalReelFileName
-        ? portalReelFileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')
-        : `VERTICAL REEL ${reelNum}`;
-
-      let finalVideoUrl = portalReelUrl.trim();
-      let isBase64 = false;
-
-      // If a local video file was selected, convert to Base64 to sync with Firebase Cloud database
-      if (selectedVideoFile) {
-        showNotification(`Encoding ${selectedVideoFile.name} to Base64 & syncing to Firebase Cloud...`, 'info');
-        finalVideoUrl = await fileToBase64(selectedVideoFile);
-        isBase64 = true;
-        // Also keep local cached copy for zero-latency local playback
-        storeVideoBlob(newId, selectedVideoFile).catch(() => {});
-      } else {
-        isBase64 = isBase64Video(finalVideoUrl);
-      }
-
-      const newReel: ReelItem = {
-        id: newId,
-        number: reelNum,
-        title: titleName,
-        client: 'Social / Vertical Client',
-        duration: '00:15',
-        aspect: '9:16',
-        videoUrl: finalVideoUrl,
-        isBase64,
-        base64Video: isBase64 ? finalVideoUrl : undefined,
-        hasStoredBlob: false,
-        uploadedAt: new Date().toISOString(),
-      };
-
-      if (selectedVideoFile?.name) {
-        newReel.fileName = selectedVideoFile.name;
-      }
-      if (portalReelFileSize) {
-        newReel.fileSize = portalReelFileSize;
-      }
-
-      addReel(newReel);
-
-      // Clean up form states
-      setSelectedVideoFile(null);
-      setPortalReelUrl('');
-      setPortalReelFileName('');
-      setPortalReelFileSize('');
-      setPortalReelPreview('');
-      if (portalReelFileRef.current) portalReelFileRef.current.value = '';
-
-      setSelectedReelId(newId);
-      showNotification(
-        isBase64
-          ? `✓ Reel "${titleName}" converted to Base64 & synced to Firebase Cloud Database!`
-          : `✓ Reel "${titleName}" added to Carousel & Firebase!`,
-        'success'
-      );
-    } catch (err: unknown) {
-      console.error('Error adding reel:', err);
-      showNotification(err instanceof Error ? err.message : 'Failed to add reel', 'error');
-    } finally {
-      setIsUploadingReel(false);
-    }
-  };
-
-  const handleReplaceReelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !replacingReelId) return;
-
-    const isVideo =
-      (file.type && file.type.startsWith('video/')) ||
-      /\.(mp4|mov|webm|m4v|mkv|avi|quicktime)$/i.test(file.name);
-
-    if (!isVideo) {
-      showNotification('Please select a valid video file (MP4, WebM, MOV).', 'error');
-      if (replaceReelFileRef.current) replaceReelFileRef.current.value = '';
-      return;
-    }
-
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
-
-    try {
-      showNotification(`Converting ${file.name} to Base64 for Firebase Cloud...`, 'info');
-      const base64Data = await fileToBase64(file);
-      // Also cache locally for smooth playback
-      storeVideoBlob(replacingReelId, file).catch(() => {});
-
-      updateReel(replacingReelId, {
-        videoUrl: base64Data,
-        isBase64: true,
-        base64Video: base64Data,
-        hasStoredBlob: false,
-        fileName: file.name,
-        fileSize: `${sizeMb} MB`,
-      });
-      showNotification(`Reel video updated & synced to Firebase Cloud (${sizeMb} MB)!`, 'success');
-    } catch (err) {
-      console.error('Failed to replace video:', err);
-      showNotification('Failed to encode and save replacement video to Firebase Cloud', 'error');
-    } finally {
-      setReplacingReelId(null);
-      if (replaceReelFileRef.current) replaceReelFileRef.current.value = '';
     }
   };
 
@@ -381,7 +228,7 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#060609] text-zinc-100 flex flex-col">
+    <div className="min-h-screen bg-[#060609] text-zinc-100 flex flex-col relative z-10 pointer-events-auto">
       {/* Top Header Bar */}
       <header className="sticky top-0 z-50 bg-[#0c0c12]/95 backdrop-blur-md border-b border-zinc-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
@@ -530,7 +377,7 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
         </aside>
 
         {/* Content Panel */}
-        <main className="flex-1 p-6 md:p-8 max-w-6xl overflow-y-auto">
+        <main className="flex-1 p-6 md:p-8 max-w-6xl overflow-y-auto relative z-10 pointer-events-auto">
           {/* ================= HERO TAB ================= */}
           {activeTab === 'hero' && (
             <div className="space-y-8 animate-in fade-in duration-200">
@@ -919,268 +766,10 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                     VERTICAL REELS (9:16 SHOWCASE)
                   </h2>
                   <p className="text-xs font-mono text-zinc-400">
-                    Upload and manage vertical 9:16 cuts for the home 3D auto-sliding showcase.
+                    Every video in the public/videos folder shows up here and in the home carousel automatically.
                   </p>
                 </div>
-                <button
-                  onClick={() => {
-                    resetSectionToDefault('projects');
-                    showNotification('Reels restored to factory defaults.', 'info');
-                  }}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 hover:border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-zinc-200 text-xs font-mono"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>RESET REELS</span>
-                </button>
               </div>
-
-              {/* Upload New Reel Card */}
-              <div className="rounded-2xl border border-amber-400/40 bg-gradient-to-br from-[#12121a] via-[#0d0d14] to-[#08080c] p-5 md:p-6 space-y-4 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800 pb-3">
-                  <div className="flex items-center space-x-2 text-amber-400">
-                    <Film className="w-4 h-4" />
-                    <h3 className="font-heading font-bold text-sm uppercase tracking-wider text-white">
-                      ADD NEW REEL TO CAROUSEL (9:16 VERTICAL)
-                    </h3>
-                  </div>
-                  <span className="text-[10px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
-                    EDGE-TO-EDGE • NO TEXT OVERLAYS • AUTO-SLIDING
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-                  {/* Left 2 Cols: Ingest controls */}
-                  <div className="lg:col-span-2 space-y-3">
-                    <p className="text-xs text-zinc-400 font-sans leading-relaxed">
-                      Upload your video file directly or paste a direct video link (MP4, WebM, MOV, CDN stream). Plays pure edge-to-edge video with zero Instagram cards or webpage overlays.
-                    </p>
-
-                    {/* Ingest Source Toggle */}
-                    <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono">
-                      <button
-                        type="button"
-                        onClick={() => setPortalReelSource('url')}
-                        className={`py-2 rounded-lg flex items-center justify-center space-x-1.5 transition-all ${
-                          portalReelSource === 'url'
-                            ? 'bg-amber-400 text-zinc-950 font-bold shadow'
-                            : 'text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>PASTE VIDEO LINK</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPortalReelSource('file');
-                          portalReelFileRef.current?.click();
-                        }}
-                        className={`py-2 rounded-lg flex items-center justify-center space-x-1.5 transition-all ${
-                          portalReelSource === 'file'
-                            ? 'bg-amber-400 text-zinc-950 font-bold shadow'
-                            : 'text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>UPLOAD VIDEO FILE</span>
-                      </button>
-                    </div>
-
-                    {portalReelSource === 'file' ? (
-                      <div
-                        onClick={() => portalReelFileRef.current?.click()}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const file = e.dataTransfer.files?.[0];
-                          if (file) {
-                            const isVideo =
-                              (file.type && file.type.startsWith('video/')) ||
-                              /\.(mp4|mov|webm|m4v|mkv|avi|quicktime)$/i.test(file.name);
-                            if (!isVideo) {
-                              showNotification('Please drop a valid video file (MP4, MOV, WebM, M4V, MKV).', 'error');
-                              return;
-                            }
-                            const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
-                            setPortalReelFileName(file.name);
-                            setPortalReelFileSize(`${sizeMb} MB`);
-                            setSelectedVideoFile(file);
-                            const previewBlob = URL.createObjectURL(file);
-                            setPortalReelPreview(previewBlob);
-                            showNotification(`Video loaded: ${file.name} (${sizeMb} MB)!`, 'success');
-                          }
-                        }}
-                        className={`p-5 rounded-xl border-2 border-dashed ${
-                          selectedVideoFile ? 'border-emerald-500/70 bg-emerald-950/20' : 'border-zinc-700 hover:border-amber-400 bg-zinc-950/60'
-                        } text-center cursor-pointer transition-colors`}
-                      >
-                        <input
-                          ref={portalReelFileRef}
-                          type="file"
-                          accept="video/*,.mp4,.mov,.webm,.m4v,.mkv"
-                          className="hidden"
-                          onChange={handlePortalReelFile}
-                        />
-                        {selectedVideoFile ? (
-                          <div>
-                            <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-1.5" />
-                            <span className="font-mono text-xs text-emerald-300 font-bold block truncate">
-                              ✓ {portalReelFileName} ({portalReelFileSize})
-                            </span>
-                            <span className="text-[10px] text-emerald-400/80 font-mono">
-                              Loaded • Click "ADD REEL TO CAROUSEL" to encode to Base64 and sync to Firebase Cloud
-                            </span>
-                          </div>
-                        ) : (
-                          <div>
-                            <Upload className="w-6 h-6 text-amber-400 mx-auto mb-1.5" />
-                            <span className="font-mono text-xs text-white font-bold block truncate">
-                              Click or drag video file here (MP4, MOV, WebM)
-                            </span>
-                            <span className="text-[10px] text-amber-400/80 font-mono font-bold">
-                              Cloud-Synced Base64 Video • Saved to Firebase RTDB across all devices
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <input
-                          type="url"
-                          value={portalReelUrl ?? ''}
-                          onChange={(e) => {
-                            setPortalReelUrl(e.target.value);
-                            setPortalReelPreview(e.target.value);
-                          }}
-                          placeholder="Paste Google Drive link, Instagram Reel, YouTube, or direct .mp4..."
-                          className="w-full px-4 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700 text-white font-mono text-xs focus:border-amber-400 focus:outline-none"
-                        />
-                        <p className="text-[10px] font-mono text-zinc-500">
-                          💡 Supports Google Drive (set sharing to &quot;Anyone with the link&quot;), Instagram Reels, YouTube, Vimeo, and direct MP4/WebM.
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="flex items-center space-x-3 pt-1">
-                      <button
-                        type="button"
-                        onClick={handleAddPortalReel}
-                        disabled={isUploadingReel || (!selectedVideoFile && !portalReelUrl.trim() && !portalReelPreview)}
-                        className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 disabled:hover:bg-amber-400 text-zinc-950 font-heading font-bold text-xs uppercase tracking-wider flex items-center space-x-2 transition-all cursor-pointer shadow-md"
-                      >
-                        {isUploadingReel ? (
-                          <>
-                            <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                            <span>SAVING REEL...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>ADD REEL TO CAROUSEL</span>
-                          </>
-                        )}
-                      </button>
-
-                      {(portalReelPreview || selectedVideoFile || portalReelUrl) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedVideoFile(null);
-                            setPortalReelUrl('');
-                            setPortalReelFileName('');
-                            setPortalReelFileSize('');
-                            setPortalReelPreview('');
-                            if (portalReelFileRef.current) portalReelFileRef.current.value = '';
-                          }}
-                          className="px-3 py-2 rounded-xl text-zinc-400 hover:text-zinc-200 text-xs font-mono"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right 1 Col: 9:16 Vertical Reel Live Preview */}
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mb-1.5">
-                      9:16 REEL PREVIEW
-                    </span>
-                    <div className="w-[150px] aspect-[9/16] rounded-[22px] overflow-hidden border-2 border-zinc-700 bg-black relative shadow-lg">
-                      {portalReelPreview ? (
-                        (() => {
-                          const activePreviewSrc = portalReelPreview;
-                          const previewParsed = parseVideoUrl(activePreviewSrc);
-                          if (previewParsed.source === 'instagram' && previewParsed.embedUrl) {
-                            return (
-                              <div className="w-full h-full relative overflow-hidden bg-black">
-                                <iframe
-                                  src={previewParsed.embedUrl}
-                                  title="Reel Preview"
-                                  allow="autoplay; encrypted-media; picture-in-picture"
-                                  scrolling="no"
-                                  className="border-0 pointer-events-none"
-                                  style={{
-                                    position: 'absolute',
-                                    width: '100%',
-                                    height: 'calc(100% + 155px)',
-                                    top: '-52px',
-                                    left: '0',
-                                  }}
-                                />
-                              </div>
-                            );
-                          }
-                          if (previewParsed.type === 'embed' && previewParsed.embedUrl) {
-                            return (
-                              <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
-                                <iframe
-                                  src={previewParsed.embedUrl}
-                                  title="Reel Preview"
-                                  referrerPolicy="strict-origin-when-cross-origin"
-                                  allow="autoplay; encrypted-media; fullscreen; web-share"
-                                  className="w-full h-full border-0"
-                                />
-                              </div>
-                            );
-                          }
-                          const playableSrc = previewParsed.directUrl || base64ToBlobUrl(activePreviewSrc);
-                          if (!playableSrc) return null;
-                          return (
-                            <video
-                              src={playableSrc}
-                              autoPlay
-                              muted
-                              loop
-                              playsInline
-                              className="w-full h-full object-cover"
-                            />
-                          );
-                        })()
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-zinc-950">
-                          <Film className="w-6 h-6 text-zinc-700 mb-1" />
-                          <span className="text-[9px] font-mono text-zinc-600">
-                            Awaiting Reel Stream
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Hidden file input for replacing existing reel video */}
-              <input
-                ref={replaceReelFileRef}
-                type="file"
-                accept="video/*,.mp4,.mov,.webm,.m4v,.mkv"
-                className="hidden"
-                onChange={handleReplaceReelFile}
-              />
 
               {/* Active Carousel Reels Deck */}
               <div className="space-y-4">
@@ -1194,178 +783,39 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {reels.map((reel) => {
-                    const parsed = parseVideoUrl(reel.videoUrl);
-                    const isBase64 = reel.isBase64 || isBase64Video(reel.videoUrl);
-                    const isLocalVault = reel.hasStoredBlob || (reel.videoUrl && reel.videoUrl.startsWith('blob:'));
-                    const playableVideoSrc = isBase64 ? base64ToBlobUrl(reel.videoUrl) : (parsed.directUrl || reel.videoUrl);
-
-                    return (
-                      <div
-                        key={reel.id}
-                        className="rounded-2xl border border-zinc-800 bg-[#09090f] p-4 flex flex-col justify-between space-y-4 hover:border-zinc-700 transition-all"
-                      >
-                        {/* 9:16 Preview Box */}
-                        <div className="relative w-full aspect-[9/16] rounded-2xl overflow-hidden bg-black border border-zinc-800 flex items-center justify-center">
-                          {parsed.source === 'instagram' && parsed.embedUrl ? (
-                            <div className="w-full h-full relative overflow-hidden bg-black">
-                              <iframe
-                                src={parsed.embedUrl}
-                                title={reel.title}
-                                allow="autoplay; encrypted-media; picture-in-picture"
-                                scrolling="no"
-                                className="border-0 pointer-events-none"
-                                style={{
-                                  position: 'absolute',
-                                  width: '100%',
-                                  height: 'calc(100% + 155px)',
-                                  top: '-52px',
-                                  left: '0',
-                                }}
-                              />
-                            </div>
-                          ) : parsed.type === 'embed' && parsed.embedUrl ? (
-                            <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
-                              <iframe
-                                src={parsed.embedUrl}
-                                title={reel.title}
-                                allow="autoplay; encrypted-media; fullscreen"
-                                className="w-full h-full border-0"
-                              />
-                            </div>
-                          ) : playableVideoSrc ? (
-                            <video
-                              ref={(el) => {
-                                if (el) {
-                                  el.defaultMuted = true;
-                                  el.muted = true;
-                                  el.volume = 0;
-                                  if (el.paused) {
-                                    el.play().catch(() => {});
-                                  }
-                                }
-                              }}
-                              src={playableVideoSrc}
-                              autoPlay
-                              muted
-                              loop
-                              playsInline
-                              onCanPlay={(e) => {
-                                e.currentTarget.muted = true;
-                                if (e.currentTarget.paused) {
-                                  e.currentTarget.play().catch(() => {});
-                                }
-                              }}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-zinc-950">
-                              <Film className="w-6 h-6 text-zinc-700 mb-1" />
-                              <span className="text-[9px] font-mono text-zinc-600">
-                                No Video Stream
-                              </span>
-                            </div>
-                          )}
-                          <div className="absolute top-2 left-2 px-2.5 py-0.5 rounded-full bg-black/80 backdrop-blur text-[10px] font-mono text-amber-400 border border-white/10 z-10 flex items-center space-x-1">
-                            <span>#{reel.number}</span>
-                          </div>
-
-                          {isBase64 || reel.isBase64 || reel.videoUrl?.startsWith('firebase-chunked://') ? (
-                            <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-emerald-400/90 text-zinc-950 text-[9px] font-mono font-bold z-10 shadow flex items-center space-x-1">
-                              <span>CLOUD RTDB</span>
-                            </div>
-                          ) : isLocalVault ? (
-                            <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-amber-400/90 text-zinc-950 text-[9px] font-mono font-bold z-10 shadow">
-                              LOCAL CACHED
-                            </div>
-                          ) : null}
-                        </div>
-
-                        {/* Reel Controls */}
-                        <div className="space-y-3">
-                          {isBase64 || reel.isBase64 || reel.videoUrl?.startsWith('firebase-chunked://') ? (
-                            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-emerald-400/10 border border-emerald-400/30 text-[10px] font-mono text-emerald-300">
-                              <Database className="w-3 h-3 text-emerald-400 shrink-0" />
-                              <span className="truncate">CLOUD-SYNCED TO FIREBASE RTDB</span>
-                              {reel.fileSize && <span className="text-zinc-400">({reel.fileSize})</span>}
-                            </div>
-                          ) : isLocalVault ? (
-                            <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-amber-400/10 border border-amber-400/30 text-[10px] font-mono text-amber-300">
-                              <Database className="w-3 h-3 text-amber-400 shrink-0" />
-                              <span className="truncate">{reel.fileName ? `CACHED: ${reel.fileName}` : 'LOCAL CACHED'}</span>
-                              {reel.fileSize && <span className="text-zinc-400">({reel.fileSize})</span>}
-                            </div>
-                          ) : null}
-
-                          <div>
-                            <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block mb-1">
-                              Reel Title
-                            </label>
-                            <input
-                              type="text"
-                              value={reel.title ?? ''}
-                              onChange={(e) => updateReel(reel.id, { title: e.target.value })}
-                              className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-sans text-xs focus:border-amber-400 focus:outline-none"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block mb-1">
-                              Client / Category
-                            </label>
-                            <input
-                              type="text"
-                              value={reel.client ?? ''}
-                              onChange={(e) => updateReel(reel.id, { client: e.target.value })}
-                              className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-sans text-xs focus:border-amber-400 focus:outline-none"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block mb-1">
-                              {isLocalVault ? 'Local Storage Vault Ref' : isBase64 ? 'Base64 Video Data' : 'Video Stream URL'}
-                            </label>
-                            <input
-                              type="text"
-                              value={reel.videoUrl ?? ''}
-                              onChange={(e) => updateReel(reel.id, { videoUrl: e.target.value })}
-                              className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono text-[11px] focus:border-amber-400 focus:outline-none truncate"
-                            />
-                          </div>
-
-                          {/* Quick Replace Button */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setReplacingReelId(reel.id);
-                              replaceReelFileRef.current?.click();
-                            }}
-                            className="w-full flex items-center justify-center space-x-1.5 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-amber-400/50 text-zinc-200 text-xs font-mono transition-colors cursor-pointer"
-                          >
-                            <Upload className="w-3.5 h-3.5 text-amber-400" />
-                            <span>REPLACE WITH VIDEO FILE</span>
-                          </button>
-
-                          <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
-                            <span className="text-[10px] font-mono text-zinc-500">
-                              FORMAT: 9:16 REEL
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                deleteReel(reel.id);
-                                showNotification(`Reel ${reel.number} removed from carousel.`, 'info');
-                              }}
-                              className="flex items-center space-x-1 text-zinc-500 hover:text-red-400 text-xs font-mono transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>DELETE</span>
-                            </button>
-                          </div>
+                  {reels.map((reel) => (
+                    <div
+                      key={reel.id}
+                      className="rounded-2xl border border-zinc-800 bg-[#09090f] p-4 flex flex-col justify-between space-y-4 hover:border-zinc-700 transition-all"
+                    >
+                      {/* 9:16 Preview Box */}
+                      <div className="relative w-full aspect-[9/16] rounded-2xl overflow-hidden bg-black border border-zinc-800 flex items-center justify-center">
+                        <video
+                          src={reel.videoUrl}
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          preload="metadata"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute top-2 left-2 px-2.5 py-0.5 rounded-full bg-black/80 backdrop-blur text-[10px] font-mono text-amber-400 border border-white/10 z-10 flex items-center space-x-1">
+                          <span>#{reel.number}</span>
                         </div>
                       </div>
-                    );
-                  })}
+
+                      <div className="space-y-3">
+                        <div>
+                          <span className="font-heading font-bold text-sm text-white uppercase block truncate">
+                            {reel.title}
+                          </span>
+                          <span className="text-[11px] font-mono text-zinc-500 block truncate">
+                            public/videos/{reel.fileName}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1844,14 +1294,26 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                       <span className="text-[10px] font-mono text-zinc-500">{tool.experience}</span>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-zinc-400 uppercase">Primary Role</label>
-                      <input
-                        type="text"
-                        value={tool.role ?? ''}
-                        onChange={(e) => updateSoftwareTool(idx, { role: e.target.value })}
-                        className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm text-zinc-200"
-                      />
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-2 space-y-2">
+                        <label className="text-[10px] font-mono text-zinc-400 uppercase">Primary Role</label>
+                        <input
+                          type="text"
+                          value={tool.role ?? ''}
+                          onChange={(e) => updateSoftwareTool(idx, { role: e.target.value })}
+                          className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm text-zinc-200"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-zinc-400 uppercase">Experience</label>
+                        <input
+                          type="text"
+                          value={tool.experience ?? ''}
+                          onChange={(e) => updateSoftwareTool(idx, { experience: e.target.value })}
+                          placeholder="7+ Years Mastery"
+                          className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm text-zinc-200"
+                        />
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">

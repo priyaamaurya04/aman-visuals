@@ -94,10 +94,12 @@ function AppContent() {
   // Dedicated separate login & link upload portal
   if (isPortalOpen) {
     return (
-      <div className="min-h-screen bg-[#030306] text-zinc-100 selection:bg-amber-500/30 selection:text-amber-200">
+      <div className="relative min-h-screen bg-[#030306] text-zinc-100 selection:bg-amber-500/30 selection:text-amber-200">
         <FilmGrainOverlay />
         <CustomCursor />
-        <StudioPortal onExit={handleExitPortal} />
+        <div className="relative z-10 pointer-events-auto">
+          <StudioPortal onExit={handleExitPortal} />
+        </div>
       </div>
     );
   }
