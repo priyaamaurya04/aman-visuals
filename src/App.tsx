@@ -9,6 +9,7 @@ import { Hero } from './components/Hero';
 import { SelectedWork } from './components/SelectedWork';
 import { ReelsShowcase } from './components/ReelsShowcase';
 import { EditingTimeline } from './components/EditingTimeline';
+import { BrandMarquee } from './components/BrandMarquee';
 import { SkillsSection } from './components/SkillsSection';
 import { SoftwareSection } from './components/SoftwareSection';
 import { AboutSection } from './components/AboutSection';
@@ -131,6 +132,9 @@ function AppContent() {
 
         {/* Selected Work Cards with Dynamic Firestore Video Links & Case Studies */}
         <SelectedWork />
+
+        {/* Brand logos marquee (managed in the Studio, stored as base64 in RTDB) */}
+        <BrandMarquee />
 
         {/* Interactive NLE Editing Timeline */}
         <EditingTimeline />

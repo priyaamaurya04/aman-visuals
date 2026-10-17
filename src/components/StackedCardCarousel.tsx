@@ -14,6 +14,141 @@ import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { ReelItem } from '../types';
 import { parseVideoUrl, base64ToBlobUrl, isBase64Video, getAutoThumbnail } from '../utils/videoUtils';
+import { youtubeEmbedUrl, youtubeErrorMessage, youtubeShortsUrl, youtubeThumbnailUrl } from '../utils/youtubeReels';
+
+// Auto-slide dwell for every reel, whatever its source
+const AUTO_SLIDE_MS = 2000;
+
+// YouTube player states (IFrame API)
+const YT_ENDED = 0;
+const YT_PLAYING = 1;
+const YT_PAUSED = 2;
+
+// px of YouTube's player chrome (title bar / Shorts logo) hidden above and below a carousel card
+const YT_CHROME_CROP = 110;
+
+/**
+ * A YouTube Short inside a carousel card. Off-centre cards show only the thumbnail, so the page never
+ * runs more than one YouTube player. The centred card mounts the official embed (muted autoplay, which
+ * YouTube allows) and follows its state over the postMessage API: the thumbnail covers YouTube's own
+ * play / pause overlays until the video is actually playing, and a stray pause is resumed. An ended
+ * video calls onEnded (the carousel moves on) or, without it, restarts (YouTube's own loop shows its
+ * end screen between plays).
+ */
+const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; onEnded?: () => void }> = ({
+  reel,
+  active,
+  onEnded,
+}) => {
+  const videoId = reel.youtubeId!;
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [errorCode, setErrorCode] = useState<number | null>(null);
+
+  const onEndedRef = useRef(onEnded);
+  onEndedRef.current = onEnded;
+
+  const command = (func: string, args: unknown[] = []) =>
+    iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+
+  // Fresh start each time the card becomes centred, or when the reel's URL is edited in the portal
+  useEffect(() => {
+    setPlaying(false);
+    setErrorCode(null);
+  }, [active, videoId]);
+
+  useEffect(() => {
+    if (!active) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow || !/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+      let msg: { event?: string; info?: unknown };
+      try {
+        msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      } catch {
+        return; // not a player message
+      }
+      if (msg?.event === 'onError') {
+        setErrorCode(Number(msg.info));
+        return;
+      }
+      const state =
+        msg?.event === 'onStateChange'
+          ? Number(msg.info)
+          : msg?.event === 'infoDelivery' && typeof (msg.info as { playerState?: number })?.playerState === 'number'
+          ? (msg.info as { playerState: number }).playerState
+          : null;
+      if (state === null) return;
+
+      if (state === YT_PLAYING) {
+        setPlaying(true);
+      } else if (state === YT_PAUSED) {
+        // Viewers can't pause a card (no controls); a pause comes from the browser, so keep it going
+        command('playVideo');
+      } else if (state === YT_ENDED) {
+        if (onEndedRef.current) {
+          onEndedRef.current();
+          return;
+        }
+        setPlaying(false);
+        command('seekTo', [0, true]);
+        command('playVideo');
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [active]);
+
+  // Subscribe to player events (same handshake the IFrame API uses)
+  const handleLoad = () => {
+    iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: reel.id, channel: 'widget' }), '*');
+  };
+
+  return (
+    <div className="absolute inset-0 w-full h-full bg-black overflow-hidden">
+      {active && errorCode === null && (
+        <iframe
+          ref={iframeRef}
+          src={youtubeEmbedUrl(videoId, { autoplay: true, mute: true, loop: false, controls: false })}
+          title={reel.title}
+          referrerPolicy="strict-origin-when-cross-origin"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          onLoad={handleLoad}
+          // Gestures go to the card (swipe / drag); the expand button opens the interactive player.
+          // The player is taller than the card: the 9:16 video still fills the card exactly, while
+          // YouTube's title bar (top) and Shorts logo (bottom), drawn at the player's edges, fall
+          // outside it and are clipped.
+          className="absolute left-0 w-full border-0 pointer-events-none"
+          style={{ top: -YT_CHROME_CROP, height: `calc(100% + ${YT_CHROME_CROP * 2}px)` }}
+        />
+      )}
+
+      {/* Thumbnail sits above the player and hides YouTube's play / pause / end screens until it is playing */}
+      <img
+        src={youtubeThumbnailUrl(videoId)}
+        alt={reel.title}
+        loading="lazy"
+        className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-500 ${
+          active && playing && errorCode === null ? 'opacity-0' : 'opacity-100'
+        }`}
+      />
+
+      {errorCode !== null && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center bg-black/80">
+          <span className="text-xs font-mono text-zinc-300">{youtubeErrorMessage(errorCode)}</span>
+          <a
+            href={reel.sourceUrl || youtubeShortsUrl(videoId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-700 hover:border-amber-400 text-amber-400 text-[11px] font-mono"
+          >
+            OPEN ON YOUTUBE <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const StackedCardCarousel: React.FC = () => {
   const { reels } = usePortfolio();
@@ -109,17 +244,18 @@ export const StackedCardCarousel: React.FC = () => {
     setActiveIndex((prev) => (prev - 1 + totalSlides) % totalSlides);
   }, [totalSlides]);
 
-  // Auto-slide to the next reel every 2 seconds unconditionally unless cinema modal is open
+  // Auto-slide to the next reel every 2s unless cinema modal is open
+  const slideDelay = AUTO_SLIDE_MS;
   useEffect(() => {
     if (totalSlides <= 1 || cinemaReel) return;
 
     const autoSlideTimer = window.setInterval(() => {
       setIsDragging(false);
       setActiveIndex((prev) => (prev + 1) % totalSlides);
-    }, 2000);
+    }, slideDelay);
 
     return () => window.clearInterval(autoSlideTimer);
-  }, [totalSlides, cinemaReel]);
+  }, [totalSlides, cinemaReel, slideDelay]);
 
   // Autoplay cinema reel immediately when opened
   useEffect(() => {
@@ -234,7 +370,7 @@ export const StackedCardCarousel: React.FC = () => {
       <div
         ref={containerRef}
         className="relative w-full max-w-6xl mx-auto h-[540px] sm:h-[620px] md:h-[670px] flex items-center justify-center perspective-[1500px]"
-        style={{ perspective: '1500px', transformStyle: 'preserve-3d' }}
+        style={{ perspective: '1500px' }}
       >
         {/* Sleek Floating Navigation Arrow Left */}
         {totalSlides > 1 && (
@@ -315,7 +451,9 @@ export const StackedCardCarousel: React.FC = () => {
                 zIndex: { duration: 0.08 },
               }}
               style={{
-                transformStyle: 'preserve-3d',
+                // Flat (not preserve-3d): the cards have no 3D children, and a 3D rendering context
+                // around the YouTube iframe makes the browser re-composite every video frame
+                transformStyle: 'flat',
                 transformOrigin: 'center center',
                 pointerEvents: isHidden ? 'none' : undefined,
               }}
@@ -371,6 +509,17 @@ export const StackedCardCarousel: React.FC = () => {
                 {/* Full Bleed 9:16 Video Player */}
                 <div className="absolute inset-0 w-full h-full bg-black overflow-hidden flex items-center justify-center pointer-events-auto">
                   {(() => {
+                    // YouTube Short saved in the Studio portal: official embed, never a <video>
+                    if (reel.sourceType === 'youtube' && reel.youtubeId) {
+                      return (
+                        <YouTubeReelCard
+                          reel={reel}
+                          active={isCenter}
+                          onEnded={totalSlides > 1 ? handleNext : undefined}
+                        />
+                      );
+                    }
+
                     // YouTube embed
                     if (parsed.type === 'embed' && parsed.source === 'youtube') {
                       const cleanEmbedUrl = parsed.backgroundUrl || parsed.embedUrl || '';
@@ -529,6 +678,18 @@ export const StackedCardCarousel: React.FC = () => {
                   </a>
                 )}
 
+                {cinemaReel.sourceType === 'youtube' && cinemaReel.youtubeId && (
+                  <a
+                    href={cinemaReel.sourceUrl || youtubeShortsUrl(cinemaReel.youtubeId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-700 hover:border-amber-400 text-amber-400 text-xs font-mono transition-all"
+                  >
+                    <span>OPEN ON YOUTUBE</span>
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                )}
+
                 <button
                   type="button"
                   onClick={() => setCinemaReel(null)}
@@ -546,6 +707,20 @@ export const StackedCardCarousel: React.FC = () => {
               onClick={(e) => e.stopPropagation()}
             >
               {(() => {
+                // YouTube Short: interactive player with YouTube's own controls (sound on if the browser allows)
+                if (cinemaReel.sourceType === 'youtube' && cinemaReel.youtubeId) {
+                  return (
+                    <iframe
+                      src={youtubeEmbedUrl(cinemaReel.youtubeId, { autoplay: true, mute: false, loop: true, controls: true })}
+                      title={cinemaReel.title}
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allow="autoplay; encrypted-media; fullscreen; picture-in-picture; web-share"
+                      allowFullScreen
+                      className="w-full h-full border-0 pointer-events-auto"
+                    />
+                  );
+                }
+
                 const parsedCinema = parseVideoUrl(cinemaReel.videoUrl);
 
                 if (parsedCinema.type === 'embed' && parsedCinema.embedUrl) {

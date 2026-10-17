@@ -74,3 +74,27 @@ video::-webkit-media-controls-start-playback-button {
 ::-webkit-scrollbar-thumb:hover {
   background: #d97706;
 }
+
+/* Brand logo marquee (BrandMarquee.tsx): the track holds the logos twice and moves left → right by one half */
+@keyframes brand-marquee-ltr {
+  from {
+    transform: translate3d(-50%, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.brand-marquee-track {
+  animation: brand-marquee-ltr linear infinite;
+}
+
+.brand-marquee:hover .brand-marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-marquee-track {
+    animation-play-state: paused;
+  }
+}

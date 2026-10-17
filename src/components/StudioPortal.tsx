@@ -30,12 +30,19 @@ import {
   Database,
   RefreshCw,
   Image as ImageIcon,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { parseVideoUrl, base64ToBlobUrl, isBase64Video, fileToBase64 } from '../utils/videoUtils';
 import { storeVideoBlob } from '../utils/videoStorage';
 import { convertFileToBase64, isBase64Image, normalizeImageSrc, getBase64Size } from '../utils/imageUtils';
 import { ReelItem } from '../types';
+import { youtubeThumbnailUrl } from '../utils/youtubeReels';
+import { YouTubeReelsManager } from './YouTubeReelsManager';
+import { BrandsManager } from './BrandsManager';
 
 interface StudioPortalProps {
   onExit: () => void;
@@ -48,6 +55,7 @@ type TabType =
   | 'about'
   | 'skills'
   | 'software'
+  | 'brands'
   | 'timeline'
   | 'process'
   | 'contact'
@@ -74,17 +82,21 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
     updateProject,
     addProject,
     deleteProject,
+    moveProject,
     reels,
     updateReel,
     addReel,
     deleteReel,
+    moveReel,
     savePortfolioItem,
     skills,
     updateSkill,
     addSkill,
     deleteSkill,
+    moveSkill,
     softwareTools,
     updateSoftwareTool,
+    moveSoftwareTool,
     timelineStages,
     updateTimelineStage,
     processSteps,
@@ -339,6 +351,7 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
               { id: 'about', label: 'About & Biography', icon: User },
               { id: 'skills', label: 'Services & Disciplines', icon: Sparkles },
               { id: 'software', label: 'Software Arsenal', icon: Layers },
+              { id: 'brands', label: 'Brand Marquee', icon: ImageIcon },
               { id: 'timeline', label: 'Editing Timeline', icon: Clock },
               { id: 'process', label: '5-Phase Process', icon: ChevronRight },
               { id: 'contact', label: 'Contact & Socials', icon: Mail },
@@ -558,6 +571,7 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                     addProject({
                       id: newId,
                       number: nextNum,
+                      order: projects.length + 1,
                       title: `NEW PROJECT ${nextNum}`,
                       client: 'Featured Client',
                       year: '2025',
@@ -614,7 +628,30 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                       <span className="text-amber-400 font-bold">
                         {selectedProject.number} • {selectedProject.title} ({selectedProject.aspect})
                       </span>
-                      <span>{selectedProject.client}</span>
+                      <div className="flex items-center gap-3">
+                        <span>{selectedProject.client}</span>
+                        {/* Sequence: move this project earlier / later in Selected Work */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => moveProject(selectedProject.id, -1)}
+                            disabled={projects[0]?.id === selectedProject.id}
+                            title="Move earlier"
+                            className="p-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-300 hover:text-amber-400 hover:border-amber-400/60 disabled:opacity-30 disabled:hover:text-zinc-300 disabled:hover:border-zinc-800"
+                          >
+                            <ArrowLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveProject(selectedProject.id, 1)}
+                            disabled={projects[projects.length - 1]?.id === selectedProject.id}
+                            title="Move later"
+                            className="p-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-300 hover:text-amber-400 hover:border-amber-400/60 disabled:opacity-30 disabled:hover:text-zinc-300 disabled:hover:border-zinc-800"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {renderCleanVideoPreview(selectedProject.videoUrl, selectedProject.title)}
@@ -754,6 +791,27 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
           )}
 
           {/* ================= VERTICAL REELS TAB (9:16 CAROUSEL) ================= */}
+          {activeTab === 'brands' && (
+            <div className="space-y-8 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+                <div>
+                  <div className="flex items-center space-x-2 text-amber-400 font-mono text-xs tracking-wider uppercase mb-1">
+                    <ImageIcon className="w-4 h-4" />
+                    <span>BRAND LOGOS</span>
+                  </div>
+                  <h2 className="font-heading font-bold text-2xl text-white uppercase tracking-tight">
+                    BRAND MARQUEE
+                  </h2>
+                  <p className="text-xs font-mono text-zinc-400">
+                    Logos scroll left to right above the Editing Timeline. Each one is saved as a Base64 image in Firebase.
+                  </p>
+                </div>
+              </div>
+
+              <BrandsManager />
+            </div>
+          )}
+
           {activeTab === 'reels' && (
             <div className="space-y-8 animate-in fade-in duration-200">
               <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
@@ -766,10 +824,12 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                     VERTICAL REELS (9:16 SHOWCASE)
                   </h2>
                   <p className="text-xs font-mono text-zinc-400">
-                    Every video in the public/videos folder shows up here and in the home carousel automatically.
+                    Every video in the public/videos folder shows up here and in the home carousel automatically, followed by the YouTube Shorts added below.
                   </p>
                 </div>
               </div>
+
+              <YouTubeReelsManager />
 
               {/* Active Carousel Reels Deck */}
               <div className="space-y-4">
@@ -783,22 +843,31 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {reels.map((reel) => (
+                  {reels.map((reel, index) => (
                     <div
                       key={reel.id}
                       className="rounded-2xl border border-zinc-800 bg-[#09090f] p-4 flex flex-col justify-between space-y-4 hover:border-zinc-700 transition-all"
                     >
                       {/* 9:16 Preview Box */}
                       <div className="relative w-full aspect-[9/16] rounded-2xl overflow-hidden bg-black border border-zinc-800 flex items-center justify-center">
-                        <video
-                          src={reel.videoUrl}
-                          autoPlay
-                          muted
-                          loop
-                          playsInline
-                          preload="metadata"
-                          className="w-full h-full object-cover"
-                        />
+                        {reel.sourceType === 'youtube' && reel.youtubeId ? (
+                          <img
+                            src={youtubeThumbnailUrl(reel.youtubeId)}
+                            alt={reel.title}
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <video
+                            src={reel.videoUrl}
+                            autoPlay
+                            muted
+                            loop
+                            playsInline
+                            preload="metadata"
+                            className="w-full h-full object-cover"
+                          />
+                        )}
                         <div className="absolute top-2 left-2 px-2.5 py-0.5 rounded-full bg-black/80 backdrop-blur text-[10px] font-mono text-amber-400 border border-white/10 z-10 flex items-center space-x-1">
                           <span>#{reel.number}</span>
                         </div>
@@ -810,9 +879,40 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                             {reel.title}
                           </span>
                           <span className="text-[11px] font-mono text-zinc-500 block truncate">
-                            public/videos/{reel.fileName}
+                            {reel.sourceType === 'youtube'
+                              ? `YouTube · ${reel.youtubeId}`
+                              : `public/videos/${reel.fileName}`}
                           </span>
                         </div>
+                        {reel.sourceType === 'youtube' && (
+                          // Sequence: move this Short earlier / later in the carousel
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                moveReel(reel.id, -1).catch((e) => showNotification(String(e?.message || e), 'error'))
+                              }
+                              disabled={index === 0 || reels[index - 1]?.sourceType !== 'youtube'}
+                              title="Move earlier"
+                              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-[11px] font-mono text-zinc-300 hover:text-amber-400 hover:border-amber-400/60 disabled:opacity-30 disabled:pointer-events-none"
+                            >
+                              <ArrowLeft className="w-3.5 h-3.5" />
+                              <span>EARLIER</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                moveReel(reel.id, 1).catch((e) => showNotification(String(e?.message || e), 'error'))
+                              }
+                              disabled={index === reels.length - 1}
+                              title="Move later"
+                              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-[11px] font-mono text-zinc-300 hover:text-amber-400 hover:border-amber-400/60 disabled:opacity-30 disabled:pointer-events-none"
+                            >
+                              <span>LATER</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1192,13 +1292,33 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                   <div key={idx} className="p-5 rounded-xl border border-zinc-800 bg-[#09090e] space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-mono text-amber-400 font-bold">SERVICE #{idx + 1}</span>
-                      <button
-                        onClick={() => deleteSkill(idx)}
-                        className="text-zinc-500 hover:text-red-400 p-1"
-                        title="Delete Service"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => moveSkill(idx, -1)}
+                          disabled={idx === 0}
+                          className="text-zinc-500 hover:text-amber-400 p-1 disabled:opacity-30 disabled:pointer-events-none"
+                          title="Move up"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveSkill(idx, 1)}
+                          disabled={idx === skills.length - 1}
+                          className="text-zinc-500 hover:text-amber-400 p-1 disabled:opacity-30 disabled:pointer-events-none"
+                          title="Move down"
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteSkill(idx)}
+                          className="text-zinc-500 hover:text-red-400 p-1"
+                          title="Delete Service"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1290,8 +1410,31 @@ export const StudioPortal: React.FC<StudioPortalProps> = ({ onExit }) => {
                 {softwareTools.map((tool, idx) => (
                   <div key={idx} className="p-5 rounded-xl border border-zinc-800 bg-[#09090e] space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono text-amber-400 font-bold">{tool.name}</span>
-                      <span className="text-[10px] font-mono text-zinc-500">{tool.experience}</span>
+                      <span className="text-xs font-mono text-amber-400 font-bold">
+                        <span className="text-zinc-500 mr-1.5">#{idx + 1}</span>
+                        {tool.name}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-zinc-500">{tool.experience}</span>
+                        <button
+                          type="button"
+                          onClick={() => moveSoftwareTool(idx, -1)}
+                          disabled={idx === 0}
+                          className="text-zinc-500 hover:text-amber-400 p-1 disabled:opacity-30 disabled:pointer-events-none"
+                          title="Move earlier"
+                        >
+                          <ArrowLeft className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveSoftwareTool(idx, 1)}
+                          disabled={idx === softwareTools.length - 1}
+                          className="text-zinc-500 hover:text-amber-400 p-1 disabled:opacity-30 disabled:pointer-events-none"
+                          title="Move later"
+                        >
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-3">

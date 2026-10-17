@@ -40,6 +40,7 @@ export interface Project {
   tagline: string;
   tools: string[];
   caseStudy: ProjectCaseStudy;
+  order?: number; // position in Selected Work (1 = first); set by the Studio's move buttons
 }
 
 export interface ReelItem {
@@ -57,6 +58,14 @@ export interface ReelItem {
   fileName?: string;
   fileSize?: string;
   uploadedAt?: string;
+  // 'local' = file in public/videos; 'youtube' = link stored in RTDB (metadata only)
+  sourceType?: 'local' | 'youtube';
+  youtubeId?: string;
+  sourceUrl?: string; // URL exactly as pasted in the Studio portal
+  order?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface TimelineStage {
@@ -99,4 +108,13 @@ export interface ProcessStep {
   duration: string;
   summary: string;
   deliverables: string[];
+}
+
+/** A brand logo in the marquee above the Editing Timeline; stored at portfolio/brands/{id}. */
+export interface BrandLogo {
+  id: string;
+  name: string;
+  image: string; // base64 data URL
+  order: number; // 1 = first
+  createdAt?: string;
 }

@@ -23,7 +23,7 @@ export const AvatarHero3D: React.FC<AvatarHero3DProps> = ({ className = '' }) =>
     let targetY = 0;
     let currentX = 0;
     let currentY = 0;
-    let animationFrameId: number;
+    let animationFrameId = 0; // 0 = loop stopped
     let isMouseActive = false;
     let idleTimer: NodeJS.Timeout | null = null;
 
@@ -36,6 +36,7 @@ export const AvatarHero3D: React.FC<AvatarHero3DProps> = ({ className = '' }) =>
       targetY = e.clientY / innerHeight - 0.5;
 
       isMouseActive = true;
+      if (!animationFrameId) animationFrameId = requestAnimationFrame(animate);
       if (idleTimer) clearTimeout(idleTimer);
 
       idleTimer = setTimeout(() => {
@@ -74,10 +75,13 @@ export const AvatarHero3D: React.FC<AvatarHero3DProps> = ({ className = '' }) =>
         `;
       }
 
-      animationFrameId = requestAnimationFrame(animate);
+      // Stop once the card has settled back to rest; the next mouse move restarts the loop,
+      // so it doesn't run every frame forever (e.g. while a reel is playing)
+      const settled =
+        !isMouseActive && Math.abs(targetX) < 0.001 && Math.abs(targetY) < 0.001 &&
+        Math.abs(currentX) < 0.001 && Math.abs(currentY) < 0.001;
+      animationFrameId = settled ? 0 : requestAnimationFrame(animate);
     };
-
-    animationFrameId = requestAnimationFrame(animate);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);

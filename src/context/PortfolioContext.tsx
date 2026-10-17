@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   ref,
   set,
@@ -25,10 +25,10 @@ import {
   TIMELINE_STAGES as DEFAULT_TIMELINE,
   PROCESS_STEPS as DEFAULT_PROCESS,
 } from '../data/portfolioData';
-import { Project, ReelItem, TimelineStage, SkillItem, SoftwareTool, ProcessStep } from '../types';
+import { Project, ReelItem, TimelineStage, SkillItem, SoftwareTool, ProcessStep, BrandLogo } from '../types';
 import localVideoFiles from 'virtual:local-videos';
 import { rehydrateReelsWithStoredVideos, removeStoredVideo } from '../utils/videoStorage';
-import { uploadReelVideoToFirebase, fetchReelVideoFromFirebase } from '../utils/firebaseVideoSync';
+import { fetchReelVideoFromFirebase } from '../utils/firebaseVideoSync';
 
 const STORAGE_CACHE_KEY_ITEMS = 'aman_gupta_portfolio_custom_items';
 const STORAGE_CACHE_KEY_SECTIONS = 'aman_gupta_site_settings_v3';
@@ -285,6 +285,7 @@ export function sanitizeProject(p: Partial<Project>, defaultP?: Project): Projec
   return {
     id: p.id || defaultP?.id || `proj-${Date.now()}`,
     number: p.number ?? defaultP?.number ?? '01',
+    ...(typeof (p.order ?? defaultP?.order) === 'number' ? { order: p.order ?? defaultP?.order } : {}),
     title: p.title ?? defaultP?.title ?? '',
     client: p.client ?? defaultP?.client ?? '',
     year: p.year ?? defaultP?.year ?? '',
@@ -345,19 +346,34 @@ interface PortfolioContextType {
   updateProject: (id: string, patch: Partial<Project>) => void;
   addProject: (project: Project) => void;
   deleteProject: (id: string) => void;
+  /** Moves a project one place earlier (-1) or later (+1) in Selected Work. */
+  moveProject: (id: string, step: -1 | 1) => void;
 
   reels: ReelItem[];
-  updateReel: (id: string, patch: Partial<ReelItem>) => void;
-  addReel: (reel: ReelItem) => void;
-  deleteReel: (id: string) => void;
+  updateReel: (id: string, patch: Partial<ReelItem>) => Promise<void>;
+  addReel: (reel: ReelItem) => Promise<void>;
+  deleteReel: (id: string) => Promise<void>;
+  /** Moves a YouTube Short one place earlier (-1) or later (+1) in the carousel. */
+  moveReel: (id: string, step: -1 | 1) => Promise<void>;
 
   skills: SkillItem[];
   updateSkill: (index: number, patch: Partial<SkillItem>) => void;
   addSkill: (skill: SkillItem) => void;
   deleteSkill: (index: number) => void;
+  /** Moves a service one place earlier (-1) or later (+1). */
+  moveSkill: (index: number, step: -1 | 1) => void;
 
   softwareTools: SoftwareTool[];
+
+  /** Brand logos for the marquee, sorted by order. */
+  brands: BrandLogo[];
+  addBrand: (brand: Omit<BrandLogo, 'order'>) => Promise<void>;
+  updateBrand: (id: string, patch: Partial<Pick<BrandLogo, 'name' | 'image'>>) => Promise<void>;
+  deleteBrand: (id: string) => Promise<void>;
+  moveBrand: (id: string, step: -1 | 1) => Promise<void>;
   updateSoftwareTool: (index: number, patch: Partial<SoftwareTool>) => void;
+  /** Moves a software tool one place earlier (-1) or later (+1). */
+  moveSoftwareTool: (index: number, step: -1 | 1) => void;
 
   timelineStages: TimelineStage[];
   updateTimelineStage: (index: number, patch: Partial<TimelineStage>) => void;
@@ -511,6 +527,25 @@ function cleanForFirebase<T>(data: T): T {
 }
 
 function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
+  // YouTube Shorts: metadata only, never video data
+  if (reel.sourceType === 'youtube') {
+    return cleanForFirebase({
+      id: reel.id,
+      sourceType: reel.sourceType,
+      youtubeId: reel.youtubeId,
+      sourceUrl: reel.sourceUrl,
+      videoUrl: reel.videoUrl,
+      title: reel.title,
+      number: reel.number,
+      aspect: '9:16',
+      client: reel.client || 'Social / Vertical Client',
+      order: reel.order ?? 0,
+      createdAt: reel.createdAt,
+      updatedAt: reel.updatedAt,
+      updatedBy: reel.updatedBy,
+    });
+  }
+
   const isChunked = reel.videoUrl?.startsWith('firebase-chunked://');
   const isBase64 = reel.isBase64 || reel.videoUrl?.startsWith('data:video/') || (reel.videoUrl && reel.videoUrl.length > 500 && !reel.videoUrl.startsWith('http'));
   const isTooLargeForSingleNode = reel.videoUrl && reel.videoUrl.length > 6000000;
@@ -576,10 +611,17 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
     }
   };
 
+  // Brand logos (base64) for the marquee; kept only in RTDB (portfolio/brands), not in localStorage
+  const [brandsList, setBrandsList] = useState<BrandLogo[]>([]);
+
+  // Bumped on every reels snapshot so a slower, older hydration can't overwrite a newer one
+  const reelsSnapshotGenRef = useRef(0);
+
   // Rehydrate stored video files from IndexedDB on initial mount
   useEffect(() => {
+    const gen = reelsSnapshotGenRef.current;
     rehydrateReelsWithStoredVideos(reelsList).then((rehydrated) => {
-      setReelsList(rehydrated);
+      if (gen === reelsSnapshotGenRef.current) setReelsList(rehydrated);
     });
   }, []);
 
@@ -606,6 +648,14 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
 
         setRtdbConnected(true);
         const data = snapshot.val();
+
+        const rawBrands: Record<string, BrandLogo> = data.brands && typeof data.brands === 'object' ? data.brands : {};
+        setBrandsList(
+          Object.entries(rawBrands)
+            .filter(([, b]) => b && typeof b.image === 'string' && b.image.startsWith('data:image/'))
+            .map(([id, b]) => ({ ...b, id, name: b.name || '' }))
+            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (a.createdAt || '').localeCompare(b.createdAt || ''))
+        );
 
         if (data.hero) {
           setHeroContent((prev) => {
@@ -659,7 +709,9 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
           });
         }
 
-        // Realtime sync for Vertical Reels (rehydrated from Firebase Cloud and local vault)
+        // Realtime sync for Vertical Reels (rehydrated from Firebase Cloud and local vault).
+        // Hydration is async, so only the newest snapshot may commit its result.
+        const reelsGen = ++reelsSnapshotGenRef.current;
         if (data.reels) {
           const raw = data.reels;
           const reelsArr: ReelItem[] = (Array.isArray(raw)
@@ -681,31 +733,23 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
                 }
                 return cleanReel;
               })
-            ).then((cloudHydrated) => {
-              rehydrateReelsWithStoredVideos(cloudHydrated).then((rehydrated) => {
+            )
+              .then((cloudHydrated) => rehydrateReelsWithStoredVideos(cloudHydrated))
+              .then((rehydrated) => {
+                if (reelsGen !== reelsSnapshotGenRef.current) return;
                 setReelsList(rehydrated);
                 persistSectionLocally('reels', rehydrated);
-              });
-            });
+              })
+              .catch((e) => console.warn('Reel hydration notice:', e));
           } else {
             setReelsList([]);
             persistSectionLocally('reels', []);
           }
         } else {
-          // If local browser has valid reels not yet in RTDB, push them to RTDB so all visitors see them
-          setReelsList((prev) => {
-            const validLocal = prev.filter((r) => r && !isDummyReel(r) && !r.videoUrl?.startsWith('blob:'));
-            if (validLocal.length > 0) {
-              const reelsMap: Record<string, unknown> = {};
-              validLocal.forEach((r) => {
-                reelsMap[r.id] = sanitizeReelForRtdb(r);
-              });
-              set(ref(rtdb, 'portfolio/reels'), reelsMap).catch(() => {});
-              return validLocal;
-            }
-            persistSectionLocally('reels', []);
-            return [];
-          });
+          // The database is the source of truth: an empty reels node means every reel was deleted.
+          // (Pushing this browser's cached reels back here used to resurrect deleted reels.)
+          setReelsList([]);
+          persistSectionLocally('reels', []);
         }
 
         if (data.skills) {
@@ -793,17 +837,31 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
         proj
       );
     })
-    .filter((proj) => !isDummyProject(proj));
+    .filter((proj) => !isDummyProject(proj))
+    // Sequence set in the Studio (order), falling back to the stored number for older projects;
+    // the displayed number always follows that sequence (01, 02, 03…)
+    .map((proj, idx) => ({ proj, key: proj.order ?? (parseInt(proj.number, 10) || 1000 + idx) }))
+    .sort((a, b) => a.key - b.key)
+    .map(({ proj }, idx) => ({ ...proj, number: String(idx + 1).padStart(2, '0') }));
 
-  // Vertical reels: one per video file in public/videos (see localVideosPlugin in vite.config.ts).
-  const effectiveReels: ReelItem[] = localVideoFiles.map((file, idx) => ({
+  // Vertical reels: one per video file in public/videos (see localVideosPlugin in vite.config.ts),
+  // alphabetical, followed by the YouTube Shorts saved in RTDB in their configured order.
+  const localReels: ReelItem[] = localVideoFiles.map((file) => ({
     id: `local-${file}`,
-    number: String(idx + 1).padStart(2, '0'),
+    number: '',
     title: file.replace(/\.[^.]+$/, '').toUpperCase(),
     videoUrl: `/videos/${encodeURIComponent(file)}`,
     aspect: '9:16',
     client: 'Social / Vertical Client',
     fileName: file,
+    sourceType: 'local',
+  }));
+  const youtubeReels: ReelItem[] = reelsList
+    .filter((r) => r.sourceType === 'youtube' && r.youtubeId)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const effectiveReels: ReelItem[] = [...localReels, ...youtubeReels].map((r, idx) => ({
+    ...r,
+    number: String(idx + 1).padStart(2, '0'),
   }));
 
   // Updaters with direct RTDB sync
@@ -919,6 +977,19 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
     });
   };
 
+  // Swaps a project with its neighbour and saves the new sequence (order + number) on every project
+  // whose position changed, one record each.
+  const moveProject = (id: string, step: -1 | 1) => {
+    const ordered = [...effectiveProjects];
+    const index = ordered.findIndex((p) => p.id === id);
+    const target = index + step;
+    if (index === -1 || target < 0 || target >= ordered.length) return;
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    ordered.forEach((p, i) => {
+      if (p.order !== i + 1) updateProject(p.id, { order: i + 1, number: String(i + 1).padStart(2, '0') });
+    });
+  };
+
   const deleteProject = (id: string) => {
     setProjectsList((prev) => {
       const updated = prev.filter((p) => p.id !== id);
@@ -936,110 +1007,82 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
     });
   };
 
-  // REELS UPDATERS (Supports cloud Base64 videos in Firebase RTDB and cloud chunks)
-  const updateReel = (id: string, patch: Partial<ReelItem>) => {
-    // If videoUrl is a base64 string, upload to Firebase Realtime Database cloud
-    if (patch.videoUrl && (patch.videoUrl.startsWith('data:video/') || (patch.videoUrl.length > 500 && !patch.videoUrl.startsWith('http')))) {
-      uploadReelVideoToFirebase(id, patch.videoUrl).catch((e) => {
-        console.warn('Reel cloud video upload notice:', e);
-      });
-    }
-
-    setReelsList((prev) => {
-      const updated = prev.map((r) => (r.id === id ? { ...r, ...patch } : r));
-      persistSectionLocally('reels', updated);
-      const targetReel = updated.find((r) => r.id === id);
-      if (targetReel) {
-        const safePayload = sanitizeReelForRtdb(targetReel);
-        set(ref(rtdb, `portfolio/reels/${id}`), safePayload).catch((e) => {
-          console.warn('Reel update to RTDB notice:', e.message);
-        });
-      }
-      return updated;
-    });
-
-    if (patch.videoUrl || patch.title || patch.client) {
-      setCustomItems((prev) => {
-        const existing = prev[id] || {
-          id,
-          itemType: 'reel',
-          title: patch.title || '',
-          videoUrl: patch.videoUrl || '',
-          updatedBy: auth.currentUser?.uid || 'guest-editor-local',
-        };
-        const nextItem: FirestorePortfolioItem = {
-          ...existing,
-          title: patch.title ?? existing.title,
-          videoUrl: patch.videoUrl ?? existing.videoUrl,
-          client: patch.client ?? existing.client,
-          aspectRatio: patch.aspect ?? existing.aspectRatio,
-          isBase64: patch.isBase64 ?? existing.isBase64,
-        };
-        const next = { ...prev, [id]: nextItem };
-        persistItemsLocally(next);
-        return next;
-      });
-    }
+  // REELS (YouTube Shorts metadata in RTDB). Each call writes only portfolio/reels/{id} — never the
+  // whole collection — and resolves/rejects with the database result so the portal can show errors.
+  // Local state is not touched here: the realtime listener above applies the change.
+  const requireEditor = () => {
+    const user = auth.currentUser;
+    return user?.email || user?.uid || 'guest-editor-local';
   };
 
-  const addReel = (reel: ReelItem) => {
-    // If videoUrl is a base64 string, upload to Firebase Realtime Database cloud
-    if (reel.videoUrl && (reel.videoUrl.startsWith('data:video/') || (reel.videoUrl.length > 500 && !reel.videoUrl.startsWith('http')))) {
-      uploadReelVideoToFirebase(reel.id, reel.videoUrl).catch((e) => {
-        console.warn('Reel cloud video upload notice:', e);
-      });
-    }
+  // BRANDS: one record per logo at portfolio/brands/{id}; the realtime listener applies changes
+  const sortedBrands = [...brandsList].sort((a, b) => a.order - b.order);
 
-    setReelsList((prev) => {
-      const updated = [reel, ...prev];
-      persistSectionLocally('reels', updated);
-      
-      const safePayload = sanitizeReelForRtdb(reel);
-      set(ref(rtdb, `portfolio/reels/${reel.id}`), safePayload).catch((e) => {
-        console.warn('Reel sync to RTDB notice:', e.message);
-      });
-
-      return updated;
-    });
-
-    setCustomItems((prev) => {
-      const nextItem: FirestorePortfolioItem = {
-        id: reel.id,
-        itemType: 'reel',
-        title: reel.title,
-        videoUrl: reel.videoUrl.length > 500 ? (reel.fileName || 'cloud-video') : reel.videoUrl,
-        client: reel.client,
-        aspectRatio: reel.aspect,
-        isBase64: reel.isBase64,
-        updatedBy: auth.currentUser?.uid || 'guest-editor-local',
-        updatedAt: new Date().toISOString(),
-      };
-      const next = { ...prev, [reel.id]: nextItem };
-      persistItemsLocally(next);
-      return next;
-    });
+  const addBrand = async (brand: Omit<BrandLogo, 'order'>): Promise<void> => {
+    const order = sortedBrands.reduce((max, b) => Math.max(max, b.order ?? 0), 0) + 1;
+    await set(
+      ref(rtdb, `portfolio/brands/${brand.id}`),
+      cleanForFirebase({ ...brand, order, createdAt: new Date().toISOString(), updatedBy: requireEditor() })
+    );
   };
 
-  const deleteReel = (id: string) => {
-    // Clean up local IndexedDB storage and Firebase Cloud chunks
-    removeStoredVideo(id).catch(() => {});
+  const updateBrand = async (id: string, patch: Partial<Pick<BrandLogo, 'name' | 'image'>>): Promise<void> => {
+    await update(ref(rtdb, `portfolio/brands/${id}`), cleanForFirebase({ ...patch, updatedBy: requireEditor() }));
+  };
+
+  const deleteBrand = async (id: string): Promise<void> => {
+    await remove(ref(rtdb, `portfolio/brands/${id}`));
+  };
+
+  const moveBrand = async (id: string, step: -1 | 1): Promise<void> => {
+    const ordered = [...sortedBrands];
+    const index = ordered.findIndex((b) => b.id === id);
+    const target = index + step;
+    if (index === -1 || target < 0 || target >= ordered.length) return;
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    await Promise.all(
+      ordered.map((b, i) =>
+        b.order === i + 1 ? Promise.resolve() : update(ref(rtdb, `portfolio/brands/${b.id}`), { order: i + 1 })
+      )
+    );
+  };
+
+  const addReel = async (reel: ReelItem): Promise<void> => {
+    const editor = requireEditor();
+    const now = new Date().toISOString();
+    const payload = sanitizeReelForRtdb({ ...reel, createdAt: reel.createdAt || now, updatedAt: now, updatedBy: editor });
+    await set(ref(rtdb, `portfolio/reels/${reel.id}`), payload);
+  };
+
+  const updateReel = async (id: string, patch: Partial<ReelItem>): Promise<void> => {
+    const editor = requireEditor();
+    const { id: _ignored, ...fields } = patch;
+    await update(
+      ref(rtdb, `portfolio/reels/${id}`),
+      cleanForFirebase({ ...fields, updatedAt: new Date().toISOString(), updatedBy: editor })
+    );
+  };
+
+  // Renumbers the Shorts 1..n in their new order and writes only the reels whose position changed,
+  // one record each (never a rewrite of the whole collection).
+  const moveReel = async (id: string, step: -1 | 1): Promise<void> => {
+    requireEditor();
+    const ordered = effectiveReels.filter((r) => r.sourceType === 'youtube');
+    const index = ordered.findIndex((r) => r.id === id);
+    const target = index + step;
+    if (index === -1 || target < 0 || target >= ordered.length) return;
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    await Promise.all(
+      ordered.map((r, i) => (r.order === i + 1 ? Promise.resolve() : updateReel(r.id, { order: i + 1 })))
+    );
+  };
+
+  const deleteReel = async (id: string): Promise<void> => {
+    requireEditor();
+    await remove(ref(rtdb, `portfolio/reels/${id}`));
+    // Legacy uploaded reels may also have chunked video data / a browser-stored copy
     remove(ref(rtdb, `portfolio/reelVideos/${id}`)).catch(() => {});
-
-    setReelsList((prev) => {
-      const updated = prev.filter((r) => r.id !== id);
-      persistSectionLocally('reels', updated);
-      remove(ref(rtdb, `portfolio/reels/${id}`)).catch((e) => {
-        console.warn('Reel removal from RTDB notice:', e.message);
-      });
-      return updated;
-    });
-
-    setCustomItems((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      persistItemsLocally(next);
-      return next;
-    });
+    removeStoredVideo(id).catch(() => {});
   };
 
   const updateSkill = (index: number, patch: Partial<SkillItem>) => {
@@ -1064,6 +1107,20 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
     });
   };
 
+  const moveSkill = (index: number, step: -1 | 1) => {
+    setSkillsList((prev) => {
+      const target = index + step;
+      if (target < 0 || target >= prev.length) return prev;
+      const updated = [...prev];
+      [updated[index], updated[target]] = [updated[target], updated[index]];
+      persistSectionLocally('skills', updated);
+      set(ref(rtdb, 'portfolio/skills'), cleanForFirebase(updated)).catch((e) => {
+        console.warn('Skills reorder to RTDB notice:', e.message);
+      });
+      return updated;
+    });
+  };
+
   const deleteSkill = (index: number) => {
     setSkillsList((prev) => {
       const updated = prev.filter((_, idx) => idx !== index);
@@ -1081,6 +1138,20 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
       persistSectionLocally('software', updated);
       set(ref(rtdb, 'portfolio/software'), cleanForFirebase(updated)).catch((e) => {
         console.warn('Software update to RTDB notice:', e.message);
+      });
+      return updated;
+    });
+  };
+
+  const moveSoftwareTool = (index: number, step: -1 | 1) => {
+    setSoftwareList((prev) => {
+      const target = index + step;
+      if (target < 0 || target >= prev.length) return prev;
+      const updated = [...prev];
+      [updated[index], updated[target]] = [updated[target], updated[index]];
+      persistSectionLocally('software', updated);
+      set(ref(rtdb, 'portfolio/software'), cleanForFirebase(updated)).catch((e) => {
+        console.warn('Software reorder to RTDB notice:', e.message);
       });
       return updated;
     });
@@ -1223,17 +1294,13 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
         projectsMap[p.id] = cleanForFirebase(p);
       });
 
-      const reelsMap: Record<string, unknown> = {};
-      reelsList.forEach((r) => {
-        reelsMap[r.id] = sanitizeReelForRtdb(r);
-      });
-
+      // Reels are deliberately left out: they are written one record at a time by addReel/updateReel/
+      // deleteReel, and rewriting them from this browser's (possibly stale) copy dropped saved reels.
       const fullPayload = {
         hero: heroContent,
         about: aboutContent,
         contact: contactContent,
         projects: projectsMap,
-        reels: reelsMap,
         skills: skillsList,
         software: softwareList,
         timeline: timelineList,
@@ -1243,7 +1310,8 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
         updatedBy: uid,
       };
 
-      await set(ref(rtdb, 'portfolio'), cleanForFirebase(fullPayload));
+      // update(), not set(): replaces only the sections listed above and keeps portfolio/reels intact
+      await update(ref(rtdb, 'portfolio'), cleanForFirebase(fullPayload));
       setIsSyncing(false);
       setRtdbConnected(true);
 
@@ -1416,16 +1484,25 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
         updateProject,
         addProject,
         deleteProject,
+        moveProject,
         reels: effectiveReels,
         updateReel,
         addReel,
         deleteReel,
+        moveReel,
         skills: skillsList,
         updateSkill,
         addSkill,
         deleteSkill,
+        moveSkill,
         softwareTools: softwareList,
+        brands: sortedBrands,
+        addBrand,
+        updateBrand,
+        deleteBrand,
+        moveBrand,
         updateSoftwareTool,
+        moveSoftwareTool,
         timelineStages: timelineList,
         updateTimelineStage,
         processSteps: processList,
