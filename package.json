@@ -4,16 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "sync-videos": "node scripts/sync-drive-videos.mjs",
-    "sync-videos:watch": "node scripts/sync-drive-videos.mjs --until-done",
-    "build": "vite build",
-    "build:full": "node scripts/sync-drive-videos.mjs && vite build && esbuild server.ts --platform=node --format=esm --packages=external --outfile=server.js",
-    "start": "node server.ts",
-    "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
-  },
+  "dev": "vite --port=3000 --host=0.0.0.0",
+  "build": "vite build",
+  "start": "node server.ts",
+  "preview": "vite preview",
+  "clean": "rm -rf dist server.js",
+  "lint": "tsc --noEmit"
+},
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
