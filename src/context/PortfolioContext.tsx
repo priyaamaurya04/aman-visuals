@@ -26,7 +26,7 @@ import {
   PROCESS_STEPS as DEFAULT_PROCESS,
 } from '../data/portfolioData';
 import { Project, ReelItem, TimelineStage, SkillItem, SoftwareTool, ProcessStep, BrandLogo } from '../types';
-import localVideoFiles from 'virtual:local-videos';
+
 import { rehydrateReelsWithStoredVideos, removeStoredVideo } from '../utils/videoStorage';
 import { fetchReelVideoFromFirebase } from '../utils/firebaseVideoSync';
 
@@ -846,20 +846,16 @@ function sanitizeReelForRtdb(reel: ReelItem): Record<string, unknown> {
 
   // Vertical reels: one per video file in public/videos (see localVideosPlugin in vite.config.ts),
   // alphabetical, followed by the YouTube Shorts saved in RTDB in their configured order.
-  const localReels: ReelItem[] = localVideoFiles.map((file) => ({
-    id: `local-${file}`,
-    number: '',
-    title: file.replace(/\.[^.]+$/, '').toUpperCase(),
-    videoUrl: `/videos/${encodeURIComponent(file)}`,
-    aspect: '9:16',
-    client: 'Social / Vertical Client',
-    fileName: file,
-    sourceType: 'local',
-  }));
-  const youtubeReels: ReelItem[] = reelsList
-    .filter((r) => r.sourceType === 'youtube' && r.youtubeId)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (a.createdAt || '').localeCompare(b.createdAt || ''));
-  const effectiveReels: ReelItem[] = [...localReels, ...youtubeReels].map((r, idx) => ({
+// Vertical reels: use only YouTube Shorts saved in Firebase.
+// Local video files are not loaded.
+const effectiveReels: ReelItem[] = reelsList
+  .filter((r) => r.sourceType === 'youtube' && r.youtubeId)
+  .sort(
+    (a, b) =>
+      (a.order ?? 0) - (b.order ?? 0) ||
+      (a.createdAt || '').localeCompare(b.createdAt || '')
+  )
+  .map((r, idx) => ({
     ...r,
     number: String(idx + 1).padStart(2, '0'),
   }));
