@@ -14,10 +14,13 @@ import { ReelItem } from '../types';
 import { parseVideoUrl, base64ToBlobUrl, isBase64Video, getAutoThumbnail } from '../utils/videoUtils';
 import { youtubeEmbedUrl, youtubeErrorMessage, youtubeShortsUrl, youtubeThumbnailUrl } from '../utils/youtubeReels';
 
-// Auto-slide dwell for a non-YouTube reel; a YouTube Short stays centred until it ends
+// Auto-slide dwell for every reel, whatever its source
 const AUTO_SLIDE_MS = 2000;
-// Longest a YouTube Short stays centred if its end is never reported (e.g. the player failed to load)
-const YT_MAX_DWELL_MS = 60000;
+
+// YouTube players run on the centred card and the next YT_PRELOAD_AHEAD cards: at one slide per
+// AUTO_SLIDE_MS that starts each video ~6s before it is centred, enough to load and get past
+// YouTube's start overlay (YT_OVERLAY_MS), while keeping the page to four players
+const YT_PRELOAD_AHEAD = 3;
 
 // YouTube player states (IFrame API)
 const YT_ENDED = 0;
@@ -32,10 +35,10 @@ const YT_OVERLAY_MS = 4500;
 const YT_CHROME_CROP = 110;
 
 /**
- * A YouTube Short inside a carousel card. Only the centred card and its two neighbours (`mounted`) run
- * the official embed (muted autoplay, which YouTube allows); a neighbour is therefore already playing,
- * past YouTube's start overlay, by the time it slides to the centre, and the page never runs more than
- * three players. The rest show only the thumbnail. The player's state is followed over the postMessage
+ * A YouTube Short inside a carousel card. Only the centred card and the next few coming up (`mounted`,
+ * see YT_PRELOAD_AHEAD) run the official embed (muted autoplay, which YouTube allows), so a card is
+ * already playing, past YouTube's start overlay, by the time it slides to the centre. The rest show
+ * only the thumbnail. The player's state is followed over the postMessage
  * API: the thumbnail covers YouTube's own play / pause overlays until the video has played past them,
  * and a stray pause is resumed. An ended video on the centred card calls onEnded (the carousel moves
  * on); otherwise it restarts (YouTube's own loop shows its end screen between plays). With
@@ -272,19 +275,17 @@ export const StackedCardCarousel: React.FC = () => {
     setActiveIndex((prev) => (prev - 1 + totalSlides) % totalSlides);
   }, [totalSlides]);
 
-  // Auto-slide unless the cinema modal is open: a YouTube Short moves on when it ends (onEnded), with
-  // YT_MAX_DWELL_MS as a fallback; any other reel after AUTO_SLIDE_MS
-  const centreIsYouTube = reels[safeActiveIndex]?.sourceType === 'youtube' && !!reels[safeActiveIndex]?.youtubeId;
+  // Auto-slide to the next reel every 2s unless cinema modal is open (restarts after a manual move)
   useEffect(() => {
     if (totalSlides <= 1 || cinemaReel) return;
 
     const autoSlideTimer = window.setTimeout(() => {
       setIsDragging(false);
       setActiveIndex((prev) => (prev + 1) % totalSlides);
-    }, centreIsYouTube ? YT_MAX_DWELL_MS : AUTO_SLIDE_MS);
+    }, AUTO_SLIDE_MS);
 
     return () => window.clearTimeout(autoSlideTimer);
-  }, [totalSlides, cinemaReel, centreIsYouTube, safeActiveIndex]);
+  }, [totalSlides, cinemaReel, safeActiveIndex]);
 
   // Autoplay cinema reel immediately when opened
   useEffect(() => {
@@ -543,7 +544,7 @@ export const StackedCardCarousel: React.FC = () => {
                         <YouTubeReelCard
                           reel={reel}
                           active={isCenter}
-                          mounted={absDiff <= 1}
+                          mounted={diff >= 0 && diff <= YT_PRELOAD_AHEAD}
                           onEnded={totalSlides > 1 ? handleNext : undefined}
                         />
                       );
