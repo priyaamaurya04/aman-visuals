@@ -126,19 +126,21 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-2xl animate-in fade-in duration-300"
     >
       {/* Top Floating Bar */}
-      <div className="absolute top-0 inset-x-0 p-6 flex items-center justify-between z-40 bg-gradient-to-b from-black/80 to-transparent">
-        <div className="flex items-center space-x-3">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-          <span className="font-heading font-bold text-white text-base tracking-tight uppercase">
-            AMAN GUPTA // MASTER SHOWREEL 2025
+      <div className="absolute top-0 inset-x-0 p-4 sm:p-6 flex items-center justify-between gap-3 z-40 bg-gradient-to-b from-black/80 to-transparent">
+        <div className="flex items-center space-x-3 min-w-0">
+          <span className="w-2 h-2 shrink-0 rounded-full bg-red-500 animate-ping" />
+          <span className="font-heading font-bold text-white text-sm sm:text-base tracking-tight uppercase truncate">
+            <span className="sm:hidden">SHOWREEL 2025</span>
+            <span className="hidden sm:inline">AMAN GUPTA // MASTER SHOWREEL 2025</span>
           </span>
-          <span className="text-zinc-500 font-mono text-xs">|</span>
-          <span className="text-amber-400 font-mono text-xs font-bold">
+          {/* Phones show the timecode in the control bar only */}
+          <span className="hidden sm:inline text-zinc-500 font-mono text-xs">|</span>
+          <span className="hidden sm:inline text-amber-400 font-mono text-xs font-bold">
             {formatSMPTE(timeMs, 24)}
           </span>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
           {/* External Drive Link */}
           {parsedVideo.source === 'gdrive' && parsedVideo.externalUrl && (
             <a
@@ -153,10 +155,10 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
             </a>
           )}
 
-          {/* Aspect Ratio Switcher */}
+          {/* Aspect Ratio Switcher (phones always use 16:9: a 2.39:1 frame is too short on a narrow screen) */}
           <button
             onClick={() => setAspectScope(aspectScope === '2.39' ? '16.9' : '2.39')}
-            className="px-3 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-mono tracking-wider transition-all"
+            className="hidden sm:inline-block px-3 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-mono tracking-wider transition-all"
             title="Toggle Aspect Ratio"
           >
             {aspectScope === '2.39' ? '2.39:1 SCOPE' : '16:9 FULL'}
@@ -165,7 +167,7 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
           {/* Editor Note Toggle */}
           <button
             onClick={() => setShowNotes(!showNotes)}
-            className={`px-3 py-1 rounded border text-xs font-mono tracking-wider transition-all ${
+            className={`px-2 sm:px-3 py-1 rounded border text-[10px] sm:text-xs font-mono tracking-wider whitespace-nowrap transition-all ${
               showNotes
                 ? 'border-amber-400 text-amber-400 bg-amber-500/10'
                 : 'border-zinc-800 text-zinc-400 bg-zinc-900'
@@ -185,14 +187,14 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
       </div>
 
       {/* Main Theater Video Stage */}
-      <div className="w-full h-full max-w-7xl max-h-[85vh] p-4 sm:p-8 flex items-center justify-center relative">
+      <div className="w-full h-full max-w-7xl max-h-[85vh] p-4 sm:p-8 flex flex-col items-center justify-center relative">
         <div
           ref={stageRef}
           className={`overflow-hidden bg-black flex items-center justify-center ${
             isFullscreen
               ? 'fixed inset-0 z-[60] w-full h-full'
               : `relative w-full rounded-xl shadow-2xl border border-zinc-800 transition-all duration-500 ${
-                  aspectScope === '2.39' ? 'aspect-[2.39/1]' : 'aspect-video'
+                  aspectScope === '2.39' ? 'aspect-video sm:aspect-[2.39/1]' : 'aspect-video'
                 }`
           }`}
         >
@@ -277,14 +279,15 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
           {/* Anamorphic Letterbox Bars (if 2.39 mode) */}
           {aspectScope === '2.39' && (
             <>
-              <div className="absolute top-0 inset-x-0 h-4 bg-black pointer-events-none" />
-              <div className="absolute bottom-0 inset-x-0 h-4 bg-black pointer-events-none" />
+              <div className="hidden sm:block absolute top-0 inset-x-0 h-4 bg-black pointer-events-none" />
+              <div className="hidden sm:block absolute bottom-0 inset-x-0 h-4 bg-black pointer-events-none" />
             </>
           )}
 
           {/* Live Editor Commentary HUD Overlay */}
+          {/* Over the picture from sm up; phones show the notes under the video instead */}
           {showNotes && (
-            <div className="absolute bottom-16 left-6 max-w-md p-4 rounded-lg bg-black/80 backdrop-blur-md border border-zinc-800 pointer-events-none animate-in fade-in">
+            <div className="hidden sm:block absolute bottom-16 left-6 max-w-md p-4 rounded-lg bg-black/80 backdrop-blur-md border border-zinc-800 pointer-events-none animate-in fade-in">
               <span className="text-[10px] font-mono text-amber-400 font-bold tracking-widest block mb-1 uppercase">
                 EDITOR REEL DIRECTIVE:
               </span>
@@ -295,8 +298,8 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
           )}
 
           {/* Cinema Bottom Control Bar */}
-          <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          <div className="absolute bottom-0 inset-x-0 p-2 sm:p-4 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex items-center justify-between">
+            <div className="flex items-center space-x-2 sm:space-x-4">
               <button
                 onClick={togglePlay}
                 className="p-2.5 rounded-full bg-amber-400 text-zinc-950 hover:bg-amber-300 transition-all shadow-lg"
@@ -309,7 +312,7 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
               >
                 {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
-              <div className="text-xs font-mono text-zinc-300">
+              <div className="text-[10px] sm:text-xs font-mono text-zinc-300 whitespace-nowrap">
                 <span className="text-amber-400 font-bold">{formatSMPTE(timeMs, 24)}</span>
                 <span className="text-zinc-500"> / {youtubeId && yt.duration ? formatSMPTE(yt.duration * 1000, 24) : '02:48:00'}</span>
               </div>
@@ -326,6 +329,18 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
             </div>
           </div>
         </div>
+
+        {/* Phones: editor notes under the video, so they don't cover the picture */}
+        {showNotes && !isFullscreen && (
+          <div className="sm:hidden w-full mt-4 p-4 rounded-lg bg-zinc-950 border border-zinc-800 animate-in fade-in">
+            <span className="text-[10px] font-mono text-amber-400 font-bold tracking-widest block mb-1 uppercase">
+              EDITOR REEL DIRECTIVE:
+            </span>
+            <p className="text-xs font-sans text-zinc-300 leading-relaxed">
+              Seamless pacing calibrated across 14 commercial, automotive, and narrative master cuts. Graded in DaVinci Resolve ACEScc.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
