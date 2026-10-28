@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ArrowUpRight, Clock, Film, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CaseStudyModal } from './CaseStudyModal';
+import { YouTubeBackground } from './YouTubeBackground';
 import { usePortfolio } from '../context/PortfolioContext';
 import { parseVideoUrl } from '../utils/videoUtils';
 
@@ -118,6 +119,8 @@ export const SelectedWork: React.FC = () => {
                       />
                     </div>
                   </div>
+                ) : parsedVideo.source === 'youtube' && parsedVideo.videoId ? (
+                  <YouTubeBackground videoId={parsedVideo.videoId} title={project.title} />
                 ) : parsedVideo.type === 'embed' && parsedVideo.embedUrl ? (
                   <div className="absolute inset-0 w-full h-full pointer-events-none">
                     <iframe

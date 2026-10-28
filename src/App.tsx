@@ -20,11 +20,9 @@ import { ShowreelModal } from './components/ShowreelModal';
 import { CustomCursor } from './components/CustomCursor';
 import { StudioPortal } from './components/StudioPortal';
 import { PortfolioProvider } from './context/PortfolioContext';
-import { toggleCinematicAudio } from './utils/audio';
 
 function AppContent() {
   const [isShowreelOpen, setIsShowreelOpen] = useState(false);
-  const [isAudioActive, setIsAudioActive] = useState(false);
   const [isPortalOpen, setIsPortalOpen] = useState(false);
 
   // Check URL hash and path for portal/login route
@@ -79,12 +77,6 @@ function AppContent() {
     };
   }, []);
 
-  const handleToggleAudio = () => {
-    const nextState = !isAudioActive;
-    toggleCinematicAudio(nextState);
-    setIsAudioActive(nextState);
-  };
-
   const handleExitPortal = () => {
     setIsPortalOpen(false);
     if (window.location.hash.includes('login') || window.location.hash.includes('portal')) {
@@ -117,8 +109,6 @@ function AppContent() {
       {/* Global Cinematic Sticky Navigation */}
       <Navbar
         onOpenShowreel={() => setIsShowreelOpen(true)}
-        isAudioActive={isAudioActive}
-        onToggleAudio={handleToggleAudio}
         onOpenPortal={() => setIsPortalOpen(true)}
       />
 

@@ -26,17 +26,24 @@ const YT_PAUSED = 2;
 const YT_CHROME_CROP = 110;
 
 /**
- * A YouTube Short inside a carousel card. Off-centre cards show only the thumbnail, so the page never
- * runs more than one YouTube player. The centred card mounts the official embed (muted autoplay, which
- * YouTube allows) and follows its state over the postMessage API: the thumbnail covers YouTube's own
- * play / pause overlays until the video is actually playing, and a stray pause is resumed. An ended
- * video calls onEnded (the carousel moves on) or, without it, restarts (YouTube's own loop shows its
- * end screen between plays). With muted={false} the sound is switched on once it is playing (the
+ * A YouTube Short inside a carousel card. Every visible card (`mounted`) runs the official embed (muted
+ * autoplay, which YouTube allows), so a card is already playing by the time it slides to the centre;
+ * hidden cards show only the thumbnail. The player's state is followed over the postMessage API: the
+ * thumbnail covers YouTube's own play / pause overlays until the video is actually playing, and a stray
+ * pause is resumed. An ended video on the centred card calls onEnded (the carousel moves on); otherwise
+ * it restarts (YouTube's own loop shows its end screen between plays). With muted={false} the sound is switched on once it is playing (the
  * embed always starts muted so autoplay is never blocked).
  */
-const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; muted?: boolean; onEnded?: () => void }> = ({
+const YouTubeReelCard: React.FC<{
+  reel: ReelItem;
+  active: boolean;
+  mounted?: boolean;
+  muted?: boolean;
+  onEnded?: () => void;
+}> = ({
   reel,
   active,
+  mounted = active,
   muted = true,
   onEnded,
 }) => {
@@ -51,18 +58,21 @@ const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; muted?: boole
   const command = (func: string, args: unknown[] = []) =>
     iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
 
-  // Fresh start each time the card becomes centred, or when the reel's URL is edited in the portal
+  const activeRef = useRef(active);
+  activeRef.current = active;
+
+  // Fresh start when the player is (re)mounted, or when the reel's URL is edited in the portal
   useEffect(() => {
     setPlaying(false);
     setErrorCode(null);
-  }, [active, videoId]);
+  }, [mounted, videoId]);
 
   useEffect(() => {
     if (playing) command(muted ? 'mute' : 'unMute');
   }, [muted, playing]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!mounted) return;
     const onMessage = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow || !/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
       let msg: { event?: string; info?: unknown };
@@ -89,7 +99,7 @@ const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; muted?: boole
         // Viewers can't pause a card (no controls); a pause comes from the browser, so keep it going
         command('playVideo');
       } else if (state === YT_ENDED) {
-        if (onEndedRef.current) {
+        if (activeRef.current && onEndedRef.current) {
           onEndedRef.current();
           return;
         }
@@ -100,7 +110,7 @@ const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; muted?: boole
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [active]);
+  }, [mounted]);
 
   // Subscribe to player events (same handshake the IFrame API uses)
   const handleLoad = () => {
@@ -109,7 +119,7 @@ const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; muted?: boole
 
   return (
     <div className="absolute inset-0 w-full h-full bg-black overflow-hidden">
-      {active && errorCode === null && (
+      {mounted && errorCode === null && (
         <iframe
           ref={iframeRef}
           src={youtubeEmbedUrl(videoId, { autoplay: true, mute: true, loop: false, controls: false })}
@@ -132,7 +142,7 @@ const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; muted?: boole
         alt={reel.title}
         loading="lazy"
         className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-500 ${
-          active && playing && errorCode === null ? 'opacity-0' : 'opacity-100'
+          mounted && playing && errorCode === null ? 'opacity-0' : 'opacity-100'
         }`}
       />
 
@@ -517,6 +527,7 @@ export const StackedCardCarousel: React.FC = () => {
                         <YouTubeReelCard
                           reel={reel}
                           active={isCenter}
+                          mounted={!isHidden}
                           onEnded={totalSlides > 1 ? handleNext : undefined}
                         />
                       );

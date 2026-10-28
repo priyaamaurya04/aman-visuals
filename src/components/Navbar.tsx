@@ -1,17 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, Play, Menu, X, Disc } from 'lucide-react';
+import { Play, Menu, X, Disc } from 'lucide-react';
 
 interface NavbarProps {
   onOpenShowreel: () => void;
-  isAudioActive: boolean;
-  onToggleAudio: () => void;
   onOpenPortal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenShowreel,
-  isAudioActive,
-  onToggleAudio,
   onOpenPortal,
 }) => {
   const [scrolled, setScrolled] = useState(false);
@@ -81,30 +77,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             ))}
           </nav>
 
-          {/* Ambient Audio Toggle */}
-          <button
-            onClick={onToggleAudio}
-            title={isAudioActive ? 'Mute Studio Ambient Tone' : 'Play Studio Ambient Tone'}
-            className={`p-2 rounded-full border transition-all ${
-              isAudioActive
-                ? 'border-amber-500/60 bg-amber-500/10 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                : 'border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 bg-zinc-900/40'
-            }`}
-          >
-            {isAudioActive ? (
-              <div className="flex items-center space-x-1 px-1">
-                <Volume2 className="w-3.5 h-3.5" />
-                <span className="flex space-x-0.5 items-end h-3">
-                  <span className="w-0.5 h-2 bg-amber-400 animate-pulse" />
-                  <span className="w-0.5 h-3 bg-amber-400 animate-pulse delay-75" />
-                  <span className="w-0.5 h-1.5 bg-amber-400 animate-pulse delay-150" />
-                </span>
-              </div>
-            ) : (
-              <VolumeX className="w-3.5 h-3.5" />
-            )}
-          </button>
-
           {/* Watch Showreel Pill Button */}
           <button
             onClick={onOpenShowreel}
@@ -118,13 +90,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Mobile Toggle Button */}
         <div className="flex items-center space-x-3 md:hidden">
-          <button
-            onClick={onToggleAudio}
-            className="p-2 text-zinc-300 border border-zinc-800 rounded-full"
-            aria-label="Toggle ambient sound"
-          >
-            {isAudioActive ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4" />}
-          </button>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="p-2 text-zinc-200 hover:text-white focus:outline-none"

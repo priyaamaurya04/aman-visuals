@@ -1,24 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { motion } from 'motion/react';
-import { MapPin, Award, CheckCircle2, Edit3, Film, ArrowRight } from 'lucide-react';
+import { MapPin, Award, CheckCircle2, Film, ArrowRight } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { normalizeImageSrc } from '../utils/imageUtils';
 
 export const AboutSection: React.FC = () => {
-  const { aboutContent, updateAboutContent, heroContent } = usePortfolio();
-  const [isEditingBio, setIsEditingBio] = useState(false);
-  const [bioInput, setBioInput] = useState(aboutContent.biography || '');
-
-  useEffect(() => {
-    if (!isEditingBio && aboutContent.biography) {
-      setBioInput(aboutContent.biography);
-    }
-  }, [aboutContent.biography, isEditingBio]);
-
-  const handleSaveBio = () => {
-    updateAboutContent({ biography: bioInput || '' });
-    setIsEditingBio(false);
-  };
+  const { aboutContent, heroContent } = usePortfolio();
 
   const stats = [
     { label: aboutContent.stat1Label || 'Commercials & Films', value: aboutContent.stat1Value || '120+' },
@@ -94,47 +81,19 @@ export const AboutSection: React.FC = () => {
             </div>
           </div>
 
-          {/* Right: Editable Biography & Specializations */}
+          {/* Right: Biography & Specializations */}
           <div className="lg:col-span-7 space-y-10">
-            {/* Biography with Editable Capability */}
+            {/* Biography (edited in the Studio portal) */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-mono tracking-wider text-zinc-500 uppercase">
                   PHILOSOPHY & EXPERIENCE
                 </span>
-                <button
-                  onClick={() => {
-                    if (isEditingBio) {
-                      handleSaveBio();
-                    } else {
-                      setBioInput(aboutContent.biography || '');
-                      setIsEditingBio(true);
-                    }
-                  }}
-                  className="flex items-center space-x-1.5 text-xs font-sans font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1.5 rounded border border-amber-500/30 hover:border-amber-400 uppercase tracking-wider"
-                >
-                  <Edit3 className="w-3 h-3" />
-                  <span>{isEditingBio ? 'SAVE BIOGRAPHY' : 'EDIT BIOGRAPHY'}</span>
-                </button>
               </div>
 
-              {isEditingBio ? (
-                <div className="space-y-3">
-                  <textarea
-                    value={bioInput ?? ''}
-                    onChange={(e) => setBioInput(e.target.value)}
-                    rows={8}
-                    className="w-full p-4 rounded-xl bg-zinc-950 border border-amber-400 text-zinc-200 font-sans text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  />
-                  <p className="text-[11px] font-mono text-zinc-500">
-                    Changes take effect immediately across this session and saved locally.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4 text-zinc-300 text-sm sm:text-base leading-relaxed font-sans font-normal whitespace-pre-line">
-                  {aboutContent.biography}
-                </div>
-              )}
+              <div className="space-y-4 text-zinc-300 text-sm sm:text-base leading-relaxed font-sans font-normal whitespace-pre-line">
+                {aboutContent.biography}
+              </div>
             </div>
 
             {/* Specializations Tags */}
