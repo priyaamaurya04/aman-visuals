@@ -45,7 +45,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenShowreel }) => {
   }, [activeVideoUrl]);
 
   return (
-    <section className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-[#050507]">
+    <section className="relative min-h-screen w-full flex flex-col lg:flex-row items-center justify-center overflow-hidden bg-[#050507]">
       {/* Background Cinematic Video Layer with Parallax */}
       <motion.div
         className="absolute inset-0 w-full h-full pointer-events-none scale-105"
@@ -132,17 +132,18 @@ export const Hero: React.FC<HeroProps> = ({ onOpenShowreel }) => {
         </div>
       </div>
 
-      {/* 3D AVATAR MODEL (ANCHORED TO LEFT, SHIFTED LEFT & BIT TOP, REAL-TIME 2.5D CURSOR-FOLLOWING HEAD & EYES) */}
+      {/* 3D AVATAR MODEL (REAL-TIME 2.5D CURSOR-FOLLOWING HEAD & EYES): below the text on phones and
+          tablets so nothing covers it; anchored to the left, behind the layout, from lg up */}
       <div
-        className="absolute -left-[6vw] sm:-left-[5vw] md:-left-[4vw] lg:-left-[3.5vw] xl:-left-[2.5vw] bottom-[7vh] sm:bottom-[9vh] md:bottom-[11vh] lg:bottom-[13vh] xl:bottom-[14vh] z-[15] pointer-events-none flex items-end justify-center
-                   h-[48vh] sm:h-[58vh] md:h-[70vh] lg:h-[78vh] xl:h-[82vh] max-h-[880px] aspect-square
-                   opacity-90 sm:opacity-95 md:opacity-100 lg:opacity-100 transition-all duration-500"
+        className="relative order-last shrink-0 w-[88vw] max-w-[460px] aspect-square mb-20 z-[15] pointer-events-none flex items-end justify-center
+                   lg:absolute lg:order-none lg:w-auto lg:max-w-none lg:mt-0 lg:mb-0 lg:-left-[3.5vw] xl:-left-[2.5vw] lg:bottom-[13vh] xl:bottom-[14vh]
+                   lg:h-[78vh] xl:h-[82vh] lg:max-h-[880px] transition-all duration-500"
       >
         <AvatarHero3D className="w-full h-full" />
       </div>
 
       {/* Main Hero Typography Content */}
-      <div className="relative z-20 max-w-5xl 2xl:max-w-6xl mx-auto px-6 pt-24 pb-16 text-center flex flex-col items-center lg:ml-[23vw] xl:ml-[25vw] 2xl:ml-[22vw] lg:mr-6 transition-all duration-300">
+      <div className="relative z-20 max-w-5xl 2xl:max-w-6xl mx-auto px-6 pt-24 pb-8 lg:pb-16 text-center flex flex-col items-center lg:ml-[23vw] xl:ml-[25vw] 2xl:ml-[22vw] lg:mr-6 transition-all duration-300">
         {/* Small Eyebrow / Profession Identifier */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
@@ -247,7 +248,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenShowreel }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 1, delay: 1.2 }}
-          className="mt-16 flex flex-col items-center space-y-2 text-zinc-500 hover:text-zinc-400 transition-colors cursor-pointer"
+          className="mt-16 hidden lg:flex flex-col items-center space-y-2 text-zinc-500 hover:text-zinc-400 transition-colors cursor-pointer"
           onClick={() => {
             const el = document.getElementById('selected-work');
             el?.scrollIntoView({ behavior: 'smooth' });

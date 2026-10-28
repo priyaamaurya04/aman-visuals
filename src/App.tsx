@@ -13,7 +13,6 @@ import { BrandMarquee } from './components/BrandMarquee';
 import { SkillsSection } from './components/SkillsSection';
 import { SoftwareSection } from './components/SoftwareSection';
 import { AboutSection } from './components/AboutSection';
-import { ProcessSection } from './components/ProcessSection';
 import { ContactSection } from './components/ContactSection';
 import { FilmGrainOverlay } from './components/FilmGrainOverlay';
 import { ShowreelModal } from './components/ShowreelModal';
@@ -123,6 +122,9 @@ function AppContent() {
         {/* Selected Work Cards with Dynamic Firestore Video Links & Case Studies */}
         <SelectedWork />
 
+        {/* The Editor Behind the Frame (Biography, Stats, Portrait) */}
+        <AboutSection />
+
         {/* Brand logos marquee (managed in the Studio, stored as base64 in RTDB) */}
         <BrandMarquee />
 
@@ -134,12 +136,6 @@ function AppContent() {
 
         {/* Software Arsenal with Pro NLE Shortcuts & Hover States */}
         <SoftwareSection />
-
-        {/* The Editor Behind the Frame (Biography, Stats, Portrait) */}
-        <AboutSection />
-
-        {/* 5-Phase Horizontal Editorial Workflow */}
-        <ProcessSection />
 
         {/* Contact & Inquiries */}
         <ContactSection />
