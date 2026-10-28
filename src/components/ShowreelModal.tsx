@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Play, Pause, Volume2, VolumeX, Maximize2, Film, Layers, Monitor, ExternalLink } from 'lucide-react';
+import { X, Play, Pause, Volume2, VolumeX, Maximize2, Minimize2, Film, Layers, Monitor, ExternalLink } from 'lucide-react';
 import { formatSMPTE } from '../utils/audio';
 import { usePortfolio } from '../context/PortfolioContext';
 import { parseVideoUrl } from '../utils/videoUtils';
+import { youtubeEmbedUrl } from '../utils/youtubeReels';
+import { useYouTubePlayer } from '../hooks/useYouTubePlayer';
 
 interface ShowreelModalProps {
   isOpen: boolean;
@@ -17,8 +19,28 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
   const [showNotes, setShowNotes] = useState(true);
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  // Native fullscreen where the browser allows it on an element; otherwise (iPhone Safari) the stage
+  // is pinned over the whole screen with CSS
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const parsedVideo = parseVideoUrl(showreelUrl);
+  // A YouTube showreel is played without YouTube's controls and driven by the control bar below
+  const youtubeId = parsedVideo.source === 'youtube' ? parsedVideo.videoId : undefined;
+  const yt = useYouTubePlayer(iframeRef);
+
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) setIsFullscreen(false);
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) setIsFullscreen(false);
+  }, [isOpen]);
 
   // Auto-play immediately when modal opens
   useEffect(() => {
@@ -57,7 +79,9 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
   if (!isOpen) return null;
 
   const togglePlay = () => {
-    if (videoRef.current) {
+    if (youtubeId) {
+      yt.togglePlay();
+    } else if (videoRef.current) {
       if (isPlaying) videoRef.current.pause();
       else videoRef.current.play();
       setIsPlaying(!isPlaying);
@@ -65,7 +89,9 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
   };
 
   const toggleMute = () => {
-    if (videoRef.current) {
+    if (youtubeId) {
+      yt.toggleMute();
+    } else if (videoRef.current) {
       videoRef.current.muted = !isMuted;
       setIsMuted(!isMuted);
     }
@@ -78,10 +104,20 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
   };
 
   const handleFullscreen = () => {
-    if (videoRef.current?.requestFullscreen) {
-      videoRef.current.requestFullscreen();
+    if (isFullscreen) {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+      return;
+    }
+    setIsFullscreen(true);
+    if (document.fullscreenEnabled && stageRef.current?.requestFullscreen) {
+      stageRef.current.requestFullscreen().catch(() => {});
     }
   };
+
+  const playing = youtubeId ? yt.playing : isPlaying;
+  const muted = youtubeId ? yt.muted : isMuted;
+  const timeMs = youtubeId ? yt.currentTime * 1000 : currentTimeMs;
 
   return (
     <div
@@ -98,7 +134,7 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
           </span>
           <span className="text-zinc-500 font-mono text-xs">|</span>
           <span className="text-amber-400 font-mono text-xs font-bold">
-            {formatSMPTE(currentTimeMs, 24)}
+            {formatSMPTE(timeMs, 24)}
           </span>
         </div>
 
@@ -151,8 +187,13 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
       {/* Main Theater Video Stage */}
       <div className="w-full h-full max-w-7xl max-h-[85vh] p-4 sm:p-8 flex items-center justify-center relative">
         <div
-          className={`relative w-full rounded-xl overflow-hidden shadow-2xl border border-zinc-800 bg-black transition-all duration-500 flex items-center justify-center ${
-            aspectScope === '2.39' ? 'aspect-[2.39/1]' : 'aspect-video'
+          ref={stageRef}
+          className={`overflow-hidden bg-black flex items-center justify-center ${
+            isFullscreen
+              ? 'fixed inset-0 z-[60] w-full h-full'
+              : `relative w-full rounded-xl shadow-2xl border border-zinc-800 transition-all duration-500 ${
+                  aspectScope === '2.39' ? 'aspect-[2.39/1]' : 'aspect-video'
+                }`
           }`}
         >
           {parsedVideo.source === 'instagram' && parsedVideo.embedUrl ? (
@@ -174,7 +215,29 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
                 />
               </div>
             </div>
-          ) : parsedVideo.type === 'embed' && parsedVideo.embedUrl ? (
+          ) : youtubeId ? (
+              <div className="absolute inset-0 w-full h-full">
+                <iframe
+                  ref={iframeRef}
+                  src={youtubeEmbedUrl(youtubeId, { autoplay: true, mute: true, loop: true, controls: false })}
+                  title="Master Showreel"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                  onLoad={yt.onLoad}
+                  className="absolute inset-0 w-full h-full border-0 pointer-events-none"
+                />
+                {/* Thumbnail covers YouTube's own start overlay (pause icon / title) until it has faded */}
+                <img
+                  src={`https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`}
+                  alt=""
+                  className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-500 ${
+                    yt.revealed ? 'opacity-0' : 'opacity-100'
+                  }`}
+                />
+                {/* Tap the picture to play / pause, like the direct-video player */}
+                <div className="absolute inset-0 cursor-pointer" onClick={togglePlay} />
+              </div>
+            ) : parsedVideo.type === 'embed' && parsedVideo.embedUrl ? (
               <iframe
                 src={parsedVideo.embedUrl}
                 title="Master Showreel"
@@ -238,17 +301,17 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
                 onClick={togglePlay}
                 className="p-2.5 rounded-full bg-amber-400 text-zinc-950 hover:bg-amber-300 transition-all shadow-lg"
               >
-                {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+                {playing ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
               </button>
               <button
                 onClick={toggleMute}
                 className="p-2.5 rounded-full bg-zinc-900/80 text-zinc-300 hover:text-white border border-zinc-700 transition-all"
               >
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
               <div className="text-xs font-mono text-zinc-300">
-                <span className="text-amber-400 font-bold">{formatSMPTE(currentTimeMs, 24)}</span>
-                <span className="text-zinc-500"> / 02:48:00</span>
+                <span className="text-amber-400 font-bold">{formatSMPTE(timeMs, 24)}</span>
+                <span className="text-zinc-500"> / {youtubeId && yt.duration ? formatSMPTE(yt.duration * 1000, 24) : '02:48:00'}</span>
               </div>
             </div>
 
@@ -258,7 +321,7 @@ export const ShowreelModal: React.FC<ShowreelModalProps> = ({ isOpen, onClose })
                 onClick={handleFullscreen}
                 className="p-2 rounded-full bg-zinc-900/80 text-zinc-300 hover:text-white border border-zinc-700 transition-all"
               >
-                <Maximize2 className="w-4 h-4" />
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
             </div>
           </div>
