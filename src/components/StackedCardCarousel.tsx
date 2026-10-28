@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Play,
-  Pause,
   Maximize2,
   X,
   ExternalLink,
@@ -33,11 +31,13 @@ const YT_CHROME_CROP = 110;
  * YouTube allows) and follows its state over the postMessage API: the thumbnail covers YouTube's own
  * play / pause overlays until the video is actually playing, and a stray pause is resumed. An ended
  * video calls onEnded (the carousel moves on) or, without it, restarts (YouTube's own loop shows its
- * end screen between plays).
+ * end screen between plays). With muted={false} the sound is switched on once it is playing (the
+ * embed always starts muted so autoplay is never blocked).
  */
-const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; onEnded?: () => void }> = ({
+const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; muted?: boolean; onEnded?: () => void }> = ({
   reel,
   active,
+  muted = true,
   onEnded,
 }) => {
   const videoId = reel.youtubeId!;
@@ -56,6 +56,10 @@ const YouTubeReelCard: React.FC<{ reel: ReelItem; active: boolean; onEnded?: () 
     setPlaying(false);
     setErrorCode(null);
   }, [active, videoId]);
+
+  useEffect(() => {
+    if (playing) command(muted ? 'mute' : 'unMute');
+  }, [muted, playing]);
 
   useEffect(() => {
     if (!active) return;
@@ -158,7 +162,6 @@ export const StackedCardCarousel: React.FC = () => {
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [cinemaReel, setCinemaReel] = useState<ReelItem | null>(null);
   const [isCinemaMuted, setIsCinemaMuted] = useState<boolean>(true);
-  const [isCinemaPlaying, setIsCinemaPlaying] = useState<boolean>(true);
   // Per-reel retry counter: on a stream error we reload the muted video instead of falling back
   // to the Google Drive preview iframe (which can't autoplay and shows its own play button).
   const [retryMap, setRetryMap] = useState<Record<string, number>>({});
@@ -264,12 +267,11 @@ export const StackedCardCarousel: React.FC = () => {
       const playPromise = cinemaVideoRef.current.play();
       if (playPromise !== undefined) {
         playPromise
-          .then(() => setIsCinemaPlaying(true))
           .catch(() => {
             if (cinemaVideoRef.current) {
               cinemaVideoRef.current.muted = true;
               setIsCinemaMuted(true);
-              cinemaVideoRef.current.play().then(() => setIsCinemaPlaying(true)).catch(() => {});
+              cinemaVideoRef.current.play().catch(() => {});
             }
           });
       }
@@ -707,17 +709,21 @@ export const StackedCardCarousel: React.FC = () => {
               onClick={(e) => e.stopPropagation()}
             >
               {(() => {
-                // YouTube Short: interactive player with YouTube's own controls (sound on if the browser allows)
+                // YouTube Short: same autoplaying, control-free player as the cards, looping, with a mute toggle
                 if (cinemaReel.sourceType === 'youtube' && cinemaReel.youtubeId) {
                   return (
-                    <iframe
-                      src={youtubeEmbedUrl(cinemaReel.youtubeId, { autoplay: true, mute: false, loop: true, controls: true })}
-                      title={cinemaReel.title}
-                      referrerPolicy="strict-origin-when-cross-origin"
-                      allow="autoplay; encrypted-media; fullscreen; picture-in-picture; web-share"
-                      allowFullScreen
-                      className="w-full h-full border-0 pointer-events-auto"
-                    />
+                    <div className="relative w-full h-full group/player bg-black">
+                      <YouTubeReelCard reel={cinemaReel} active muted={isCinemaMuted} />
+                      <div className="absolute bottom-4 right-4 flex items-center p-2 rounded-2xl bg-black/70 backdrop-blur-md border border-zinc-800 opacity-90 group-hover/player:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => setIsCinemaMuted(!isCinemaMuted)}
+                          className="p-2 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          {isCinemaMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
                   );
                 }
 
@@ -755,24 +761,7 @@ export const StackedCardCarousel: React.FC = () => {
                     />
 
                     {/* Quick Cinema Overlay Controls */}
-                    <div className="absolute bottom-4 inset-x-4 flex items-center justify-between p-3 rounded-2xl bg-black/70 backdrop-blur-md border border-zinc-800 opacity-90 group-hover/player:opacity-100 transition-opacity">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (cinemaVideoRef.current) {
-                            if (isCinemaPlaying) {
-                              cinemaVideoRef.current.pause();
-                            } else {
-                              cinemaVideoRef.current.play();
-                            }
-                            setIsCinemaPlaying(!isCinemaPlaying);
-                          }
-                        }}
-                        className="p-2 rounded-full bg-amber-400 text-zinc-950 hover:bg-amber-300 transition-colors cursor-pointer"
-                      >
-                        {isCinemaPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
-                      </button>
-
+                    <div className="absolute bottom-4 right-4 flex items-center p-2 rounded-2xl bg-black/70 backdrop-blur-md border border-zinc-800 opacity-90 group-hover/player:opacity-100 transition-opacity">
                       <button
                         type="button"
                         onClick={() => {
