@@ -22,14 +22,18 @@ const YT_ENDED = 0;
 const YT_PLAYING = 1;
 const YT_PAUSED = 2;
 
+// YouTube draws a pause icon and the title over a video for its first ~3s of playback (even with
+// controls=0); the thumbnail stays over the player until they have faded
+const YT_OVERLAY_MS = 4500;
+
 // px of YouTube's player chrome (title bar / Shorts logo) hidden above and below a carousel card
 const YT_CHROME_CROP = 110;
 
 /**
- * A YouTube Short inside a carousel card. Every visible card (`mounted`) runs the official embed (muted
- * autoplay, which YouTube allows), so a card is already playing by the time it slides to the centre;
- * hidden cards show only the thumbnail. The player's state is followed over the postMessage API: the
- * thumbnail covers YouTube's own play / pause overlays until the video is actually playing, and a stray
+ * A YouTube Short inside a carousel card. Every visible card, plus the next one coming into view
+ * (`mounted`), runs the official embed (muted autoplay, which YouTube allows), so a card is already
+ * playing, past YouTube's start overlay, by the time it slides to the centre; the rest show only the thumbnail. The player's state is followed over the postMessage API: the
+ * thumbnail covers YouTube's own play / pause overlays until the video has played past them, and a stray
  * pause is resumed. An ended video on the centred card calls onEnded (the carousel moves on); otherwise
  * it restarts (YouTube's own loop shows its end screen between plays). With muted={false} the sound is switched on once it is playing (the
  * embed always starts muted so autoplay is never blocked).
@@ -94,7 +98,8 @@ const YouTubeReelCard: React.FC<{
       if (state === null) return;
 
       if (state === YT_PLAYING) {
-        setPlaying(true);
+        // The player repeats its state several times a second: start the countdown once per play-through
+        if (revealTimer === undefined) revealTimer = window.setTimeout(() => setPlaying(true), YT_OVERLAY_MS);
       } else if (state === YT_PAUSED) {
         // Viewers can't pause a card (no controls); a pause comes from the browser, so keep it going
         command('playVideo');
@@ -104,12 +109,18 @@ const YouTubeReelCard: React.FC<{
           return;
         }
         setPlaying(false);
+        window.clearTimeout(revealTimer);
+        revealTimer = undefined;
         command('seekTo', [0, true]);
         command('playVideo');
       }
     };
+    let revealTimer: number | undefined;
     window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      window.clearTimeout(revealTimer);
+    };
   }, [mounted]);
 
   // Subscribe to player events (same handshake the IFrame API uses)
@@ -527,7 +538,7 @@ export const StackedCardCarousel: React.FC = () => {
                         <YouTubeReelCard
                           reel={reel}
                           active={isCenter}
-                          mounted={!isHidden}
+                          mounted={absDiff <= 3}
                           onEnded={totalSlides > 1 ? handleNext : undefined}
                         />
                       );

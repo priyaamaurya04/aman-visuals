@@ -6,11 +6,15 @@ const YT_ENDED = 0;
 const YT_PLAYING = 1;
 const YT_PAUSED = 2;
 
+// YouTube draws a pause icon and the title over a video for its first ~3s of playback (even with
+// controls=0); the thumbnail stays over the player until they have faded
+const YT_OVERLAY_MS = 4500;
+
 /**
  * A landscape YouTube video used as a silent, always-playing background (Selected Work cards).
  * Muted autoplay without controls; the player is scaled up so YouTube's title bar and logo fall outside
- * the frame, and the thumbnail covers YouTube's play / pause / end overlays until the video is actually
- * playing. A stray pause is resumed and an ended video restarts (YouTube's own loop flashes its end screen).
+ * the frame, and the thumbnail covers YouTube's play / pause / end overlays until the video has played
+ * past them. A stray pause is resumed and an ended video restarts (YouTube's own loop flashes its end screen).
  */
 export const YouTubeBackground: React.FC<{ videoId: string; title: string }> = ({ videoId, title }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -43,17 +47,24 @@ export const YouTubeBackground: React.FC<{ videoId: string; title: string }> = (
       if (state === null) return;
 
       if (state === YT_PLAYING) {
-        setPlaying(true);
+        // The player repeats its state several times a second: start the countdown once per play-through
+        if (revealTimer === undefined) revealTimer = window.setTimeout(() => setPlaying(true), YT_OVERLAY_MS);
       } else if (state === YT_PAUSED) {
         command('playVideo');
       } else if (state === YT_ENDED) {
         setPlaying(false);
+        window.clearTimeout(revealTimer);
+        revealTimer = undefined;
         command('seekTo', [0, true]);
         command('playVideo');
       }
     };
+    let revealTimer: number | undefined;
     window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      window.clearTimeout(revealTimer);
+    };
   }, []);
 
   // Subscribe to player events (same handshake the IFrame API uses)
